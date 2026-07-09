@@ -1,155 +1,143 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 import pandas as pd
 import os
 
 app = Flask(__name__)
+app.secret_key = "bhi_opname_secret_key"
 
-# Tentukan lokasi file Excel master tersimpan
-EXCEL_FILE = 'master_produk.xlsx'
+# Load Master Produk dari Excel
+EXCEL_FILE = "master_produk.xlsx"
+if os.path.exists(EXCEL_FILE):
+    df_master = pd.read_excel(EXCEL_FILE)
+    # Memastikan barcode dibaca sebagai string agar tidak kehilangan angka 0 di depan
+    df_master['barcode'] = df_master['barcode'].astype(str).str.strip()
+else:
+    df_master = pd.DataFrame(columns=['barcode', 'sku', 'brand', 'product_name', 'variant'])
 
-# Variabel global untuk menyimpan data produk di memori Python
-MASTER_PRODUK = {}
+# Penyimpanan data scan real-time di memori server lokal
+scan_results = []
+scan_id_counter = 1
 
-def muat_master_produk():
-    """Fungsi untuk membaca data dari file Excel ke dalam aplikasi"""
-    global MASTER_PRODUK
-    MASTER_PRODUK = {}
-    
-    if os.path.exists(EXCEL_FILE):
-        try:
-            df = pd.read_excel(EXCEL_FILE)
-            for _, row in df.iterrows():
-                # Membersihkan format barcode dari spasi atau pecahan desimal
-                bc = str(row['barcode']).strip().split('.')[0]
-                
-                MASTER_PRODUK[bc] = {
-                    "sku": str(row['sku']).strip(),
-                    "brand": str(row['brand']).strip(),
-                    "name": str(row['product_name']).strip(),
-                    "variant": str(row['variant']).strip()
-                }
-            print(f"\n==================================================")
-            print(f" STATUS: BERHASIL MEMUAT {len(MASTER_PRODUK)} PRODUK DARI EXCEL!")
-            print(f"==================================================\n")
-        except Exception as e:
-            print(f"\n[ERROR] Gagal membaca file Excel: {e}\n")
-    else:
-        print(f"\n[PERINGATAN] File '{EXCEL_FILE}' belum ada. Silakan upload via halaman /superuser\n")
-
-# Jalankan muat produk otomatis saat aplikasi dinyalakan
-muat_master_produk()
-
-# Tempat menyimpan data hasil scan dari 17 user selama aplikasi berjalan
-HASIL_OPNAME = []
-
-# --- 1. ROUTE LOGIN ---
 @app.route('/')
-def index():
-    zonas = ["PICKFACE", "STORAGE", "OFFLINE", "DAMAGED-STORE", "DAMAGED-WH"]
-    return render_template('login.html', zonas=zonas)
+def login():
+    return render_template('login.html')
 
-# --- 2. ROUTE HALAMAN SCAN ---
-@app.route('/scan')
+@app.route('/scan', methods=['GET', 'POST'])
 def scan_page():
-    username = request.args.get('username')
-    zona = request.args.get('zona')
-    if not username or not zona:
-        return redirect(url_for('index'))
-    return render_template('scan.html', username=username, zona=zona)
-
-# --- 3. API: CEK BARCODE ---
-@app.route('/api/cek_barcode', methods=['POST'])
-def cek_barcode():
-    data = request.json
-    barcode_input = str(data.get('barcode')).strip().split('.')[0]
-    produk = MASTER_PRODUK.get(barcode_input)
-    
-    if produk:
-        return jsonify({"status": "success", "data": produk})
-    return jsonify({"status": "error", "message": f"Barcode [{barcode_input}] tidak terdaftar di Master!"})
-
-# --- 4. API: SIMPAN HASIL OPNAME ---
-@app.route('/api/simpan_opname', methods=['POST'])
-def simpan_opname():
-    data = request.json
-    record = {
-        "id": len(HASIL_OPNAME) + 1,
-        "username": data.get('username'),
-        "zona": data.get('zona'),
-        "sublokasi": data.get('sublokasi'),
-        "barcode": data.get('barcode'),
-        "sku": data.get('sku'),
-        "brand": data.get('brand'),
-        "product_name": data.get('product_name'),
-        "variant": data.get('variant'),
-        "qty": int(data.get('qty'))
-    }
-    HASIL_OPNAME.append(record)
-    return jsonify({"status": "success", "message": "Data stock opname berhasil disimpan!"})
-
-# --- 5. ROUTE: DASHBOARD SUPER USER & UPLOAD EXCEL MASTER ---
-@app.route('/superuser', methods=['GET', 'POST'])
-def superuser_page():
     if request.method == 'POST':
-        if 'file_excel' not in request.files:
-            return "Gagal: Tidak ada form file ditemukan.", 400
-        
-        file = request.files['file_excel']
-        if file.filename == '':
-            return "Gagal: Anda belum memilih file Excel.", 400
-            
-        if file and (file.filename.endswith('.xlsx') or file.filename.endswith('.xls')):
-            try:
-                file.save(EXCEL_FILE)
-                muat_master_produk()
-                return '''
-                    <script>
-                        alert("Master produk BHI berhasil diperbarui via Web!");
-                        window.location.href = "/superuser";
-                    </script>
-                '''
-            except Exception as e:
-                return f"Gagal memproses file upload: {e}", 500
-        else:
-            return "Gagal: File harus berformat .xlsx atau .xls", 400
-            
-    return render_template('admin.html', data_so=HASIL_OPNAME)
-
-# --- 6. API: EDIT MANUAL QTY (SUPER USER) ---
-@app.route('/api/edit_qty', methods=['POST'])
-def edit_qty():
-    data = request.json
-    record_id = int(data.get('id'))
-    qty_baru = int(data.get('qty_baru'))
+        petugas = request.form.get('petugas')
+        zona = request.form.get('zona')
+        sublokasi = request.form.get('sublokasi')
+        return render_template('scan.html', petugas=petugas, zona=zona, sublokasi=sublokasi)
     
-    for item in HASIL_OPNAME:
-        if item['id'] == record_id:
-            item['qty'] = qty_baru
-            return jsonify({"status": "success", "message": f"Data ID {record_id} berhasil diubah menjadi {qty_baru}!"})
-            
-    return jsonify({"status": "error", "message": "Data tidak ditemukan!"})
+    # Jika di-refresh tanpa data login, tendang balik ke halaman login
+    return redirect(url_for('login'))
 
-# --- 7. ROUTE: DOWNLOAD EXCEL HASIL SCAN (SUPER USER) ---
+@app.route('/api/scan', methods=['POST'])
+def process_scan():
+    global scan_id_counter
+    data = request.json
+    barcode_input = str(data.get('barcode', '')).strip()
+    petugas = data.get('petugas')
+    zona = data.get('zona')
+    sublokasi = data.get('sublokasi')
+
+    # Cari data barang di dataframe master produk
+    product = df_master[df_master['barcode'] == barcode_input]
+
+    if not product.empty:
+        prod_data = product.iloc[0]
+        
+        # Cek apakah petugas yang sama sudah pernah scan barang yang sama di sublokasi yang sama
+        existing_item = next((item for item in scan_results if item['barcode'] == barcode_input 
+                              and item['petugas'] == petugas 
+                              and item['zona'] == zona 
+                              and item['sublokasi'] == sublokasi), None)
+        
+        if existing_item:
+            existing_item['qty'] += 1
+            current_qty = existing_item['qty']
+        else:
+            new_scan = {
+                'id': scan_id_counter,
+                'petugas': petugas,
+                'zona': zona,
+                'sublokasi': sublokasi,
+                'barcode': barcode_input,
+                'sku': str(prod_data['sku']),
+                'brand': str(prod_data['brand']),
+                'product_name': str(prod_data['product_name']),
+                'variant': str(prod_data['variant']),
+                'qty': 1
+            }
+            scan_results.append(new_scan)
+            scan_id_counter += 1
+            current_qty = 1
+
+        return {
+            'status': 'success',
+            'nama_produk': prod_data['product_name'],
+            'variant': prod_data['variant'],
+            'qty': current_qty
+        }, 200
+    else:
+        return {'status': 'error', 'message': 'Barcode TIDAK TERDAFTAR di Master Produk!'}, 400
+
+@app.route('/superuser')
+def superuser_dashboard():
+    selected_zona = request.args.get('filter_zona', '')
+    
+    # Mengambil list unik zona untuk pilihan dropdown filter
+    all_zonas = sorted(list(set([str(item['zona']) for item in scan_results if item.get('zona')])))
+    
+    # Lakukan filtering jika filter zona dipilih oleh superuser
+    if selected_zona:
+        filtered_results = [item for item in scan_results if str(item.get('zona')) == selected_zona]
+    else:
+        filtered_results = scan_results
+        
+    return render_template('admin.html', 
+                           results=filtered_results, 
+                           all_zonas=all_zonas, 
+                           selected_zona=selected_zona)
+
+@app.route('/superuser/edit/<int:scan_id>', methods=['POST'])
+def edit_qty(scan_id):
+    new_qty = request.form.get('qty')
+    try:
+        new_qty = int(new_qty)
+        for item in scan_results:
+            if item['id'] == scan_id:
+                item['qty'] = new_qty
+                break
+    except ValueError:
+        pass
+    return redirect(url_for('superuser_dashboard', filter_zona=request.args.get('filter_zona', '')))
+
+@app.route('/superuser/reset', methods=['POST'])
+def reset_data():
+    global scan_results, scan_id_counter
+    scan_results = []
+    scan_id_counter = 1
+    return redirect(url_for('superuser_dashboard'))
+
 @app.route('/superuser/download')
 def download_excel():
-    if not HASIL_OPNAME:
-        return '''
-            <script>
-                alert("Belum ada data scan yang masuk, tidak ada data untuk didownload.");
-                window.location.href = "/superuser";
-            </script>
-        '''
-    try:
-        df = pd.DataFrame(HASIL_OPNAME)
-        kolom_rapi = ["id", "username", "zona", "sublokasi", "barcode", "sku", "brand", "product_name", "variant", "qty"]
-        df = df[kolom_rapi]
-        df.columns = ["ID", "Petugas", "Zona", "Sublokasi", "Barcode", "SKU", "Brand", "Nama Produk", "Varian", "Qty Fisik"]
+    if not scan_results:
+        return "Belum ada data scan yang tersimpan untuk di-download.", 400
         
-        nama_file = "Hasil_Opname_BHI.xlsx"
-        df.to_excel(nama_file, index=False)
-        return send_file(nama_file, as_attachment=True)
-    except Exception as e:
-        return f"Gagal mengekspor data ke Excel: {e}", 500
+    df_download = pd.DataFrame(scan_results)
+    # Hapus kolom ID agar hasil export Excel bersih rapi
+    if 'id' in df_download.columns:
+        df_download = df_download.drop(columns=['id'])
+        
+    # Reorder urutan kolom biar mantap pas dibaca tim management
+    cols = ['petugas', 'zona', 'sublokasi', 'barcode', 'sku', 'brand', 'product_name', 'variant', 'qty']
+    df_download = df_download[cols]
+    
+    output_file = "Hasil_Opname_BHI.xlsx"
+    df_download.to_excel(output_file, index=False)
+    return send_file(output_file, as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=True)
