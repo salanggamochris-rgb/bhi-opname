@@ -75,12 +75,12 @@
         let validatedProductName = "";
         let validatedProductVariant = "";
 
-        // Standby awal kursor ke Input Rak
+        // Siagakan kursor di inputan Rak nomor 1 pertama kali masuk aplikasi
         window.onload = function() {
             inputRak.focus();
         };
 
-        // Memaksa kursor kembali ke inputan yang kosong jika tidak sengaja klik area luar luar
+        // Mengembalikan fokus kursor otomatis agar petugas tidak perlu mengeklik layar manual
         document.addEventListener('click', () => {
             if (inputRak.value === '') {
                 inputRak.focus();
@@ -91,18 +91,18 @@
             }
         });
 
-        // STEP 1: Selesai Scan Rak -> Pindah ke Barcode
+        // STEP 1: Selesai Scan Rak -> Pindah ke Input Barcode
         inputRak.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 if (inputRak.value.trim() !== '') {
-                    statusMessage.innerHTML = "<span class='text-muted small'>📍 Lokasi rak terkunci. Silakan scan produk...</span>";
+                    statusMessage.innerHTML = "<span class='text-muted small'>📍 Lokasi rak diinput. Silakan scan produk...</span>";
                     inputBarcode.focus();
                 }
             }
         });
 
-        // STEP 2: Selesai Scan Barcode -> Cek Validasi ke Server & Tampilkan Detail Produk Langsung!
+        // STEP 2: Selesai Scan Barcode -> Request info detail nama produk, lalu lompati kursor ke Qty
         inputBarcode.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -112,7 +112,7 @@
                 if (barcodeValue !== '' && rakValue !== '') {
                     statusMessage.innerHTML = "<span class='text-muted small'>🔍 Mencari info produk...</span>";
                     
-                    // Kita cek dulu barcodenya ke backend, kirim dummy qty 0 hanya untuk verifikasi info produk
+                    // Gunakan flag check_only agar server tahu ini cuma pengecekan data di tengah alur kerja
                     fetch('/api/scan', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -121,20 +121,19 @@
                             petugas: "{{ petugas }}",
                             zona: "{{ zona }}",
                             sublokasi: rakValue,
-                            qty: 0 
+                            check_only: true
                         })
                     })
                     .then(response => response.json().then(data => ({ status: response.status, body: data })))
                     .then(res => {
                         if (res.status === 200) {
-                            // Simpan detail produk ke memory variabel lokal sementara
                             validatedProductName = res.body.nama_produk;
                             validatedProductVariant = res.body.variant;
 
-                            // Tampilkan langsung detail produknya biar petugas tau barang apa yang dia pegang gess!
-                            statusMessage.innerHTML = `<span class='text-success'>📦 Produk Ditemukan:<br><strong class='text-dark'>${validatedProductName}</strong> (${validatedProductVariant})</span>`;
+                            // Tampilkan Info Produk Hasil Validasi Server
+                            statusMessage.innerHTML = `<div class='alert alert-success py-2 mb-0 text-start'>📦 <strong>${validatedProductName}</strong><br><small class='text-muted'>Varian: ${validatedProductVariant}</small></div>`;
                             
-                            // Lompati kursor otomatis ke kolom input Qty
+                            // Otomatis arahkan kursor mengetik angka jumlah barang
                             inputQty.focus();
                         } else {
                             statusMessage.innerHTML = `<span class='text-danger'>❌ ${res.body.message}</span>`;
@@ -149,7 +148,7 @@
             }
         });
 
-        // STEP 3: Selesai Isi Qty Manual & Tekan Enter -> Submit Hasil Akhir & Reset ke Atas
+        // STEP 3: Selesai Mengetik Qty Manual & Tekan Enter -> Kirim data bundel lengkap, lalu reset putaran kursor kembali ke nomor 1
         inputQty.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -158,13 +157,13 @@
                 const qty = parseInt(inputQty.value);
 
                 if (!rak || !barcode || isNaN(qty) || qty <= 0) {
-                    statusMessage.innerHTML = "<span class='text-danger'>❌ Mohon isi angka quantity dengan benar!</span>";
+                    statusMessage.innerHTML = "<span class='text-danger'>❌ Mohon isi kuantitas fisik dengan benar!</span>";
                     return;
                 }
 
                 statusMessage.innerHTML = "<span class='text-muted'>Menyimpan data opname...</span>";
                 
-                // Kirim data fix sesungguhnya dengan Qty yang diinput user ke server gess!
+                // Kirim transaksi final ke backend
                 fetch('/api/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -173,29 +172,29 @@
                         petugas: "{{ petugas }}",
                         zona: "{{ zona }}",
                         sublokasi: rak,
-                        qty: qty 
+                        qty: qty
                     })
                 })
                 .then(response => response.json().then(data => ({ status: response.status, body: data })))
                 .then(res => {
                     if (res.status === 200) {
-                        statusMessage.innerHTML = `<span class='text-success'>✅ Sukses! Tersimpan ${qty} pcs di Rak ${rak}</span>`;
+                        statusMessage.innerHTML = `<span class='text-success'>✅ Berhasil disimpan! ${qty} pcs di Rak ${rak}</span>`;
                         emptyHistory.style.display = 'none';
                         
-                        // Tambahkan ke cetakan history tumpukan paling atas
+                        // Cetak baris transaksi ke tabel log cetak history teratas petugas
                         addtoHistoryList(barcode, validatedProductName, validatedProductVariant, qty, rak);
                         
                         counterTotalItem++;
                         totalScanUser.innerText = `Total: ${counterTotalItem} item`;
 
-                        // RESET SEMUA KOLOM JADI KOSONG
+                        // KOSONGKAN SELURUH FORM AGAR BERSIH UNTUK PUTARAN BARU
                         inputRak.value = '';
                         inputBarcode.value = '';
                         inputQty.value = '';
                         validatedProductName = "";
                         validatedProductVariant = "";
                         
-                        // KURSOR OTOMATIS KEMBALI KUNCI KE STEP 1 (INPUT RAK)
+                        // KUNCI KURSOR OTOMATIS BERDIRI TEGAK KEMBALI DI SCAN RAK NOMOR 1
                         inputRak.focus();
                     } else {
                         statusMessage.innerHTML = `<span class='text-danger'>❌ ${res.body.message}</span>`;
