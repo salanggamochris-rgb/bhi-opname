@@ -28,30 +28,29 @@
         <div class="login-card">
             <div class="text-center mb-4">
                 <span class="fs-1">📦</span>
-                <h4 class="fw-bold text-dark mt-2">BHI Stock Opname</h4>
-                <p class="text-muted small">Silakan pilih identitas tugas Anda gess</p>
+                <h4 class="fw-bold text-dark mt-2">Warehouse BHI</h4>
+                <p class="text-muted small">Masuk Sistem Opname</p>
             </div>
             <form action="/scan" method="GET" id="loginForm">
                 <div class="mb-3">
-                    <label for="petugas" class="form-label fw-bold text-secondary">👤 Nama Petugas</label>
-                    <input type="text" class="form-control form-control-lg" id="petugas" name="petugas" placeholder="Nama lengkap Anda..." required autocomplete="off">
+                    <label for="petugas" class="form-label fw-bold text-secondary">Nama Lengkap Anda</label>
+                    <input type="text" class="form-control form-control-lg" id="petugas" name="petugas" placeholder="Ketik nama Anda..." required autocomplete="off">
                 </div>
                 <div class="mb-4">
-                    <label for="zona" class="form-label fw-bold text-secondary">📍 Zona Kerja</label>
+                    <label for="zona" class="form-label fw-bold text-secondary">Pilih Zona Kerja</label>
                     <select class="form-select form-control-lg" id="zona" name="zona" required>
-                        <option value="" disabled selected>-- Pilih Zona Lokasi --</option>
-                        <option value="A">ZONA A</option>
-                        <option value="B">ZONA B</option>
-                        <option value="C">ZONA C</option>
-                        <option value="D">ZONA D</option>
-                        <option value="E">ZONA E</option>
-                        <option value="BULK">ZONA BULK</option>
+                        <option value="" disabled selected>-- Pilih Zona --</option>
+                        
+                        {% for z in list_zona %}
+                        <option value="{{ z }}">{{ z }}</option>
+                        {% endfor %}
+                        
                     </select>
                 </div>
-                <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold shadow-sm">Masuk Sesi Scan 🚀</button>
+                <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold shadow-sm py-2">Masuk ke Scanner</button>
             </form>
             <div class="text-center mt-4">
-                <a href="/super-user" class="text-decoration-none small text-muted">🛡️ Masuk sebagai Admin / Super User</a>
+                <a href="/super-user" class="text-decoration-none small text-muted">🛡️ Kelola Sistem / Super User Panel</a>
             </div>
         </div>
     </div>
