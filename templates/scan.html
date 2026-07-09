@@ -8,7 +8,9 @@
     <style>
         body { background-color: #f4f6f9; }
         .info-header { background: #0d6efd; color: white; border-radius: 0 0 15px 15px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        .scan-box { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .scan-box { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: background-color 0.3s ease; }
+        /* Style visual penanda jika sedang dalam mode scan RAK */
+        .scan-box.mode-rak-aktif { background-color: #e7f1ff; border: 2px dashed #0d6efd; }
         .history-container { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-height: 280px; overflow-y: auto; }
         .history-item { border-left: 5px solid #198754; background: #f8f9fa; margin-bottom: 8px; padding: 10px; border-radius: 4px; animation: fadeIn 0.3s ease-in-out; }
         .history-item.rak-change { border-left: 5px solid #0d6efd; background: #e7f1ff; }
@@ -17,7 +19,7 @@
 </head>
 <body>
 
-    <div class="container mb-4">
+    <div class="container mb-3">
         <div class="info-header text-center">
             <h5 class="mb-1 fw-bold">Stock Opname BHI</h5>
             <div class="small">
@@ -27,13 +29,24 @@
     </div>
 
     <div class="container">
-        <div class="scan-box mb-4">
-            <div class="alert alert-info py-2 text-center small mb-3">
-                💡 <strong>Tips Cara Scan:</strong> Tembak QR Code Rak dulu, baru tembak barcode barang-barangnya.
+        <div class="row g-2 mb-3 text-center">
+            <div class="col-6">
+                <button type="button" id="btnModeBarang" class="btn btn-success w-100 fw-bold py-2 shadow-sm">
+                    📦 Mode Scan Barang
+                </button>
             </div>
+            <div class="col-6">
+                <button type="button" id="btnModeRak" class="btn btn-outline-primary w-100 fw-bold py-2 shadow-sm">
+                    📍 Pindah / Scan Rak
+                </button>
+            </div>
+        </div>
+
+        <div id="scanBox" class="scan-box mb-4">
+            <h6 id="scanLabel" class="fw-bold text-success mb-3">Silakan Tembak BARCODE BARANG:</h6>
             <div class="input-group input-group-lg mb-2">
-                <span class="input-group-text">🔍</span>
-                <input type="text" id="barcodeInput" class="form-control" placeholder="Scan QR Rak / Barcode Barang..." autofocus autocomplete="off">
+                <span id="scanIcon" class="input-group-text">📦</span>
+                <input type="text" id="barcodeInput" class="form-control" placeholder="Arahkan scanner ke barcode..." autofocus autocomplete="off">
             </div>
             <div id="statusMessage" class="mt-2 fw-bold text-center"></div>
         </div>
@@ -61,18 +74,54 @@
         const totalScanUser = document.getElementById('totalScanUser');
         const currentRakBadge = document.getElementById('currentRakBadge');
         
+        const btnModeBarang = document.getElementById('btnModeBarang');
+        const btnModeRak = document.getElementById('btnModeRak');
+        const scanBox = document.getElementById('scanBox');
+        const scanLabel = document.getElementById('scanLabel');
+        const scanIcon = document.getElementById('scanIcon');
+
         let currentSublokasi = "-";
         let counterTotalItem = 0;
+        let currentMode = "barang"; // Mode awal otomatis scan barang
 
+        // Selalu paksa focus ke input box scanner
         document.addEventListener('click', () => { barcodeInput.focus(); });
 
+        // Handler klik ganti mode secara manual
+        btnModeBarang.addEventListener('click', () => { setMode("barang"); });
+        btnModeRak.addEventListener('click', () => { setMode("rak"); });
+
+        // Fungsi mengubah UI berdasarkan mode aktif
+        function setMode(mode) {
+            currentMode = mode;
+            if (mode === "rak") {
+                btnModeRak.className = "btn btn-primary w-100 fw-bold py-2 shadow-sm";
+                btnModeBarang.className = "btn btn-outline-success w-100 fw-bold py-2 shadow-sm";
+                scanBox.className = "scan-box mb-4 mode-rak-aktif";
+                scanLabel.className = "fw-bold text-primary mb-3";
+                scanLabel.innerText = "📍 SILAKAN TEMBAK QR CODE RAK:";
+                scanIcon.innerText = "📍";
+                barcodeInput.placeholder = "Tembak QR lokasi rak baru...";
+            } else {
+                btnModeBarang.className = "btn btn-success w-100 fw-bold py-2 shadow-sm";
+                btnModeRak.className = "btn btn-outline-primary w-100 fw-bold py-2 shadow-sm";
+                scanBox.className = "scan-box mb-4";
+                scanLabel.className = "fw-bold text-success mb-3";
+                scanLabel.innerText = "Silakan Tembak BARCODE BARANG:";
+                scanIcon.innerText = "📦";
+                barcodeInput.placeholder = "Arahkan scanner ke barcode...";
+            }
+            barcodeInput.focus();
+        }
+
+        // Jalur eksekusi tembakan scanner
         barcodeInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 const inputValue = barcodeInput.value.trim().toUpperCase();
                 if (inputValue !== '') {
-                    // ATURAN ATURAN LOGIK DETEKSI QR CODE RAK
-                    if (isRakCode(inputValue)) {
-                        // Jika yang di-scan adalah kode RAK
+                    
+                    if (currentMode === "rak") {
+                        // JALUR 1: Jika sedang dalam Mode Rak
                         currentSublokasi = inputValue;
                         currentRakBadge.innerText = currentSublokasi;
                         currentRakBadge.className = "badge bg-success fs-6 fw-bold";
@@ -80,20 +129,17 @@
                         
                         emptyHistory.style.display = 'none';
                         addRakToHistoryList(currentSublokasi);
+                        
+                        // Otomatis kembalikan ke mode barang setelah rak berhasil di-scan
+                        setMode("barang");
                     } else {
-                        // Jika yang di-scan adalah BARCODE BARANG
+                        // JALUR 2: Jika sedang dalam Mode Barang
                         sendDataToBackend(inputValue);
                     }
                 }
                 barcodeInput.value = '';
             }
         });
-
-        // FUNGSI LOGIKA VALIDASI: Mana kode rak, mana kode barang?
-        function isRakCode(value) {
-            // Mengembalikan true jika teks mengandung kata RAK, AD, BC, atau panjang karakter kurang dari 8 (Format kode rak lokasimu)
-            return value.includes("RAK") || value.includes("AD") || value.includes("BC") || value.length < 8;
-        }
 
         function sendDataToBackend(barcode) {
             statusMessage.innerHTML = "<span class='text-muted'>Memproses...</span>";
@@ -134,7 +180,7 @@
             newItem.innerHTML = `
                 <div style="max-width: 80%;">
                     <div class="fw-bold text-dark small" style="line-height: 1.2;">${namaProduk}</div>
-                    <div class="text-muted" style="font-size: 11px;">Rak: <strong>${rak}</strong> | Varian: ${variant}</div>
+                    <div class="text-muted" style="font-size: 11px;">Rak: <strong>${rak}</strong> | Barcode: ${barcode}</div>
                 </div>
                 <div class="text-end">
                     <span class="badge bg-success fs-6">Qty: ${currentQty}</span>
