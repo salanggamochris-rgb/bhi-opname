@@ -6,7 +6,7 @@
     <title>Super User Dashboard - BHI Opname</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { bg-color: #f8f9fa; }
+        body { background-color: #f8f9fa; }
         .table-container { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     </style>
 </head>
@@ -15,9 +15,34 @@
         <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-4">
             <div>
                 <h1 class="text-danger fw-bold">Halaman Super User Dashboard</h1>
-                <p class="text-muted mb-0">Monitoring, Filter, & Koreksi Hasil Stock Opname Warehouse BHI</p>
+                <p class="text-muted mb-0">Management Zona, Monitoring, & Koreksi Hasil Stock Opname Warehouse BHI</p>
             </div>
             <a href="/" target="_blank" class="btn btn-outline-secondary">Buka Halaman Scan User ↗</a>
+        </div>
+
+        <div class="card p-3 mb-4 border-0 shadow-sm bg-white">
+            <h5 class="fw-bold text-primary mb-3">🛠️ Pengaturan Master Zona Lapangan</h5>
+            <div class="row g-3 align-items-center">
+                <div class="col-md-5">
+                    <form method="POST" action="/superuser/add_zona" class="input-group">
+                        <input type="text" name="new_zona" class="form-control" placeholder="Ketik nama Zona baru (cth: RECON-1)" required style="text-transform: uppercase;">
+                        <button class="btn btn-primary fw-bold" type="submit">+ Tambah Zona</button>
+                    </form>
+                </div>
+                <div class="col-md-7">
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <span class="fw-bold text-secondary me-1">Zona Aktif saat ini:</span>
+                        {% for z in master_zona %}
+                        <div class="btn-group btn-group-sm" role="group">
+                            <span class="btn btn-outline-dark disabled fw-bold bg-light">{{ z }}</span>
+                            <form action="/superuser/delete_zona/{{ z }}" method="POST" class="d-inline" onsubmit="return confirm('Hapus zona {{ z }} dari pilihan drop-off user?');">
+                                <button type="submit" class="btn btn-danger text-white fw-bold">✕</button>
+                            </form>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="d-flex justify-content-between align-items-center my-4">
@@ -33,12 +58,12 @@
         <div class="card p-3 mb-4 border-0 shadow-sm bg-white">
             <form method="GET" action="/superuser" class="row g-3 align-items-center">
                 <div class="col-auto">
-                    <label class="col-form-label fw-bold text-secondary">Filter Berdasarkan Zona:</label>
+                    <label class="col-form-label fw-bold text-secondary">Filter Tampilan Tabel Berdasarkan Zona:</label>
                 </div>
                 <div class="col-md-3">
                     <select name="filter_zona" class="form-select" onchange="this.form.submit()">
                         <option value="">-- Tampilkan Semua Zona --</option>
-                        {% for zona in all_zonas %}
+                        {% for zona in master_zona %}
                         <option value="{{ zona }}" {% if zona == selected_zona %}selected{% endif %}>{{ zona }}</option>
                         {% endfor %}
                     </select>
@@ -93,7 +118,7 @@
                             {% endfor %}
                         {% else %}
                             <tr>
-                                <td colspan="11" class="text-muted py-4">Belum ada data scan yang cocok dengan filter / belum ada aktivitas scan petugas.</td>
+                                <td colspan="11" class="text-muted py-4">Belum ada aktivitas scan petugas di zona ini.</td>
                             </tr>
                         {% endif %}
                     </tbody>
