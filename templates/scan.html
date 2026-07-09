@@ -75,12 +75,12 @@
         let validatedProductName = "";
         let validatedProductVariant = "";
 
-        // Siagakan kursor di inputan Rak nomor 1 pertama kali masuk aplikasi
+        // Siagakan kursor di inputan Rak pertama kali masuk aplikasi
         window.onload = function() {
             inputRak.focus();
         };
 
-        // Mengembalikan fokus kursor otomatis agar petugas tidak perlu mengeklik layar manual
+        // Mengembalikan fokus kursor otomatis agar tidak perlu klik layar manual
         document.addEventListener('click', () => {
             if (inputRak.value === '') {
                 inputRak.focus();
@@ -112,7 +112,6 @@
                 if (barcodeValue !== '' && rakValue !== '') {
                     statusMessage.innerHTML = "<span class='text-muted small'>🔍 Mencari info produk...</span>";
                     
-                    // Gunakan flag check_only agar server tahu ini cuma pengecekan data di tengah alur kerja
                     fetch('/api/scan', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -127,10 +126,11 @@
                     .then(response => response.json().then(data => ({ status: response.status, body: data })))
                     .then(res => {
                         if (res.status === 200) {
+                            // FIX SINKRONISASI: Menangkap variabel 'nama_produk' sesuai output app.py
                             validatedProductName = res.body.nama_produk;
                             validatedProductVariant = res.body.variant;
 
-                            // Tampilkan Info Produk Hasil Validasi Server
+                            // Tampilkan Info Produk Hasil Validasi Server ke layar HP petugas
                             statusMessage.innerHTML = `<div class='alert alert-success py-2 mb-0 text-start'>📦 <strong>${validatedProductName}</strong><br><small class='text-muted'>Varian: ${validatedProductVariant}</small></div>`;
                             
                             // Otomatis arahkan kursor mengetik angka jumlah barang
@@ -163,7 +163,6 @@
 
                 statusMessage.innerHTML = "<span class='text-muted'>Menyimpan data opname...</span>";
                 
-                // Kirim transaksi final ke backend
                 fetch('/api/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -181,7 +180,7 @@
                         statusMessage.innerHTML = `<span class='text-success'>✅ Berhasil disimpan! ${qty} pcs di Rak ${rak}</span>`;
                         emptyHistory.style.display = 'none';
                         
-                        // Cetak baris transaksi ke tabel log cetak history teratas petugas
+                        // Cetak baris transaksi ke tabel log cetak history teratas petugas di HP
                         addtoHistoryList(barcode, validatedProductName, validatedProductVariant, qty, rak);
                         
                         counterTotalItem++;
@@ -201,7 +200,7 @@
                     }
                 })
                 .catch(err => {
-                    statusMessage.innerHTML = "<span class='text-danger'>❌ Gagal mengirim data final ke Server!</span>";
+                    statusMessage.innerHTML = "<span class='text-danger'>❌ Gagal menyimpan data!</span>";
                 });
             }
         });
