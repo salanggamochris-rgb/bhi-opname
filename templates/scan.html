@@ -72,13 +72,15 @@
         const totalScanUser = document.getElementById('totalScanUser');
 
         let counterTotalItem = 0;
+        let validatedProductName = "";
+        let validatedProductVariant = "";
 
-        // Saat halaman terbuka, kursor dipaksa stanby langsung di Input Rak
+        // Standby awal kursor ke Input Rak
         window.onload = function() {
             inputRak.focus();
         };
 
-        // Kunci kursor: Jika user tidak sengaja klik area kosong luar, kembalikan kursor ke kotak yang harusnya diisi
+        // Memaksa kursor kembali ke inputan yang kosong jika tidak sengaja klik area luar luar
         document.addEventListener('click', () => {
             if (inputRak.value === '') {
                 inputRak.focus();
@@ -89,87 +91,121 @@
             }
         });
 
-        // ACTION STEP 1: Selesai Scan Rak ➡️ Lompat ke Barcode
+        // STEP 1: Selesai Scan Rak -> Pindah ke Barcode
         inputRak.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 if (inputRak.value.trim() !== '') {
-                    statusMessage.innerHTML = "<span class='text-muted small'>📍 Rak terkunci. Silakan scan barang...</span>";
+                    statusMessage.innerHTML = "<span class='text-muted small'>📍 Lokasi rak terkunci. Silakan scan produk...</span>";
                     inputBarcode.focus();
                 }
             }
         });
 
-        // ACTION STEP 2: Selesai Scan Barcode ➡️ Lompat ke Qty
+        // STEP 2: Selesai Scan Barcode -> Cek Validasi ke Server & Tampilkan Detail Produk Langsung!
         inputBarcode.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                if (inputBarcode.value.trim() !== '') {
-                    statusMessage.innerHTML = "<span class='text-muted small'>📦 Produk terbaca. Masukkan Qty fisik...</span>";
-                    inputQty.focus();
+                const barcodeValue = inputBarcode.value.trim();
+                const rakValue = inputRak.value.trim().toUpperCase();
+
+                if (barcodeValue !== '' && rakValue !== '') {
+                    statusMessage.innerHTML = "<span class='text-muted small'>🔍 Mencari info produk...</span>";
+                    
+                    // Kita cek dulu barcodenya ke backend, kirim dummy qty 0 hanya untuk verifikasi info produk
+                    fetch('/api/scan', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            barcode: barcodeValue,
+                            petugas: "{{ petugas }}",
+                            zona: "{{ zona }}",
+                            sublokasi: rakValue,
+                            qty: 0 
+                        })
+                    })
+                    .then(response => response.json().then(data => ({ status: response.status, body: data })))
+                    .then(res => {
+                        if (res.status === 200) {
+                            // Simpan detail produk ke memory variabel lokal sementara
+                            validatedProductName = res.body.nama_produk;
+                            validatedProductVariant = res.body.variant;
+
+                            // Tampilkan langsung detail produknya biar petugas tau barang apa yang dia pegang gess!
+                            statusMessage.innerHTML = `<span class='text-success'>📦 Produk Ditemukan:<br><strong class='text-dark'>${validatedProductName}</strong> (${validatedProductVariant})</span>`;
+                            
+                            // Lompati kursor otomatis ke kolom input Qty
+                            inputQty.focus();
+                        } else {
+                            statusMessage.innerHTML = `<span class='text-danger'>❌ ${res.body.message}</span>`;
+                            inputBarcode.value = '';
+                            inputBarcode.focus();
+                        }
+                    })
+                    .catch(err => {
+                        statusMessage.innerHTML = "<span class='text-danger'>❌ Gagal terhubung ke Server saat memverifikasi produk!</span>";
+                    });
                 }
             }
         });
 
-        // ACTION STEP 3: Selesai Isi Qty & Tekan Enter ➡️ Kirim Data & Reset Loop ke Rak Kembali
+        // STEP 3: Selesai Isi Qty Manual & Tekan Enter -> Submit Hasil Akhir & Reset ke Atas
         inputQty.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 const rak = inputRak.value.trim().toUpperCase();
-                const barcode = inputBarcode.value.trim().toUpperCase();
+                const barcode = inputBarcode.value.trim();
                 const qty = parseInt(inputQty.value);
 
                 if (!rak || !barcode || isNaN(qty) || qty <= 0) {
-                    statusMessage.innerHTML = "<span class='text-danger'>❌ Mohon lengkapi semua data form dengan benar!</span>";
+                    statusMessage.innerHTML = "<span class='text-danger'>❌ Mohon isi angka quantity dengan benar!</span>";
                     return;
                 }
 
-                sendDataToBackend(rak, barcode, qty);
+                statusMessage.innerHTML = "<span class='text-muted'>Menyimpan data opname...</span>";
+                
+                // Kirim data fix sesungguhnya dengan Qty yang diinput user ke server gess!
+                fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        barcode: barcode,
+                        petugas: "{{ petugas }}",
+                        zona: "{{ zona }}",
+                        sublokasi: rak,
+                        qty: qty 
+                    })
+                })
+                .then(response => response.json().then(data => ({ status: response.status, body: data })))
+                .then(res => {
+                    if (res.status === 200) {
+                        statusMessage.innerHTML = `<span class='text-success'>✅ Sukses! Tersimpan ${qty} pcs di Rak ${rak}</span>`;
+                        emptyHistory.style.display = 'none';
+                        
+                        // Tambahkan ke cetakan history tumpukan paling atas
+                        addtoHistoryList(barcode, validatedProductName, validatedProductVariant, qty, rak);
+                        
+                        counterTotalItem++;
+                        totalScanUser.innerText = `Total: ${counterTotalItem} item`;
+
+                        // RESET SEMUA KOLOM JADI KOSONG
+                        inputRak.value = '';
+                        inputBarcode.value = '';
+                        inputQty.value = '';
+                        validatedProductName = "";
+                        validatedProductVariant = "";
+                        
+                        // KURSOR OTOMATIS KEMBALI KUNCI KE STEP 1 (INPUT RAK)
+                        inputRak.focus();
+                    } else {
+                        statusMessage.innerHTML = `<span class='text-danger'>❌ ${res.body.message}</span>`;
+                    }
+                })
+                .catch(err => {
+                    statusMessage.innerHTML = "<span class='text-danger'>❌ Gagal mengirim data final ke Server!</span>";
+                });
             }
         });
-
-        // Fungsi AJAX mengirim bundle data lengkap ke API Flask
-        function sendDataToBackend(rak, barcode, qty) {
-            statusMessage.innerHTML = "<span class='text-muted'>Menyimpan ke server...</span>";
-            
-            fetch('/api/scan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    barcode: barcode,
-                    petugas: "{{ petugas }}",
-                    zona: "{{ zona }}",
-                    sublokasi: rak // Mengirim data lokasi yang di-scan barusan
-                })
-            })
-            .then(response => response.json().then(data => ({ status: response.status, body: data })))
-            .then(res => {
-                if (res.status === 200) {
-                    // Update Pesan Sukses
-                    statusMessage.innerHTML = `<span class='text-success'>✅ Berhasil! ${res.body.nama_produk} dimasukkan ke Rak ${rak}</span>`;
-                    emptyHistory.style.display = 'none';
-                    
-                    // Tambah ke riwayat list terbawah
-                    addtoHistoryList(barcode, res.body.nama_produk, res.body.variant, qty, rak);
-                    
-                    counterTotalItem++;
-                    totalScanUser.innerText = `Total: ${counterTotalItem} item`;
-
-                    // CLEAN UP FORM DAN RESET KURSOR BALIK KE NOMOR 1 (SCAN QR LOKASI)
-                    inputRak.value = '';
-                    inputBarcode.value = '';
-                    inputQty.value = '';
-                    inputRak.focus(); // Kursor kembali ke atas otomatis gess!
-                } else {
-                    statusMessage.innerHTML = `<span class='text-danger'>❌ ${res.body.message}</span>`;
-                    inputBarcode.value = '';
-                    inputBarcode.focus(); // Jika barcode salah, balikkan fokus ke form barcode biar di-scan ulang
-                }
-            })
-            .catch(err => {
-                statusMessage.innerHTML = "<span class='text-danger'>❌ Gagal terhubung ke Server!</span>";
-            });
-        }
 
         function addtoHistoryList(barcode, namaProduk, variant, qty, rak) {
             const newItem = document.createElement('div');
