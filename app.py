@@ -4,16 +4,16 @@ import os
 
 app = Flask(__name__)
 
-# CONFIGURATION: Nama file master dan file simpan database lokal
 MASTER_FILE = 'master_produk.xlsx'
-OUTPUT_FILE = '/tmp/hasil_opname.xlsx'  # Folder /tmp agar writeable di Vercel Serverless
+OUTPUT_FILE = '/tmp/hasil_opname.xlsx'
 
-# Counter untuk ID unik baris data hasil scan & penampung RAM real-time
 scan_id_counter = 1
 scan_results = []
+# Penampung zona kustom cadangan jika admin menambahkan zona baru secara manual
+custom_zones = []
 
 def load_master_data():
-    """Fungsi pembantu membaca data Excel Master secara aman"""
+    """Membaca data Excel secara aman"""
     if os.path.exists(MASTER_FILE):
         try:
             df = pd.read_excel(MASTER_FILE)
@@ -22,26 +22,47 @@ def load_master_data():
                 df['barcode'] = df['barcode'].astype(str).str.strip()
             return df
         except Exception:
-            return pd.DataFrame(columns=['barcode', 'sku', 'brand', 'product_name', 'variant'])
-    return pd.DataFrame(columns=['barcode', 'sku', 'brand', 'product_name', 'variant'])
+            return pd.DataFrame()
+    return pd.DataFrame()
 
-# Inisialisasi awal database master produk
+def get_active_zones():
+    """Mengambil list unik zona dari file excel ditambah zona kustom"""
+    zones = set()
+    df = load_master_data()
+    if not df.empty:
+        # Cari nama kolom yang mirip 'zona' atau 'zone'
+        zona_col = next((col for col in df.columns if col in ['zona', 'zone']), None)
+        if zona_col:
+            extracted = df[zona_col].dropna().astype(str).str.strip().str.upper().unique()
+            zones.update(extracted)
+    
+    # Masukkan data zona tambahan dari dashboard admin
+    zones.update(custom_zones)
+    
+    # Jika benar-benar kosong, berikan default agar tidak stuck kosong
+    if not zones:
+        return ["ZONA A", "ZONA B", "ZONA C", "ZONA D", "BULK"]
+    
+    return sorted(list(zones))
+
+# Inisialisasi data awal
 df_master = load_master_data()
 
 @app.route('/')
 def login_page():
-    # DISINI KITA KUNCI: Memanggil login.html sesuai file aslimu gess!
-    return render_template('login.html')
+    # Kirim daftar zona aktif dari database ke dropdown login.html
+    list_zona = get_active_zones()
+    return render_template('login.html', list_zona=list_zona)
 
 @app.route('/scan')
 def scan_page():
-    # Mengambil parameter identitas petugas dari URL
     petugas = request.args.get('petugas', 'Anonymous')
     zona = request.args.get('zona', '-')
     return render_template('scan.html', petugas=petugas, zona=zona)
 
+
 # =========================================================================
-# 🛡️ ROUTE SUPER USER & ADMIN: LANGSUNG DI-RENDER LEWAT INLINE STRING HTML
+# 🛡️ ROUTE SUPER USER & ADMIN DENGAN MANAGEMENT ZONA PANEL
 # =========================================================================
 @app.route('/super-user')
 @app.route('/superuser')
@@ -56,70 +77,70 @@ def super_user_page():
     <title>Super User Dashboard - Live Stock Opname</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', sans-serif; }
         .navbar-custom { background: #1e293b; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .card-stat { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: transform 0.2s; }
-        .card-stat:hover { transform: translateY(-3px); }
+        .card-stat { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .table-container { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        .table th { background-color: #f8fafc; color: #64748b; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
         .qty-input-edit { width: 80px; text-align: center; }
     </style>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark navbar-custom py-3">
         <div class="container">
-            <a class="navbar-brand fw-bold d-flex align-items-center" href="#">
-                🛡️ <span class="ms-2">BHI Opname - Admin Panel</span>
-            </a>
+            <a class="navbar-brand fw-bold" href="#">🛡️ BHI Opname - Super User Panel</a>
             <div class="d-flex gap-2">
-                <a href="/api/download" class="btn btn-success fw-bold px-4">📥 Download Excel (.xlsx)</a>
+                <a href="/api/download" class="btn btn-success btn-sm fw-bold px-3">📥 Download Excel</a>
                 <a href="/" class="btn btn-outline-light btn-sm">Halaman Login</a>
             </div>
         </div>
     </nav>
+
     <div class="container my-4">
         <div class="row g-3 mb-4">
             <div class="col-md-4">
                 <div class="card card-stat bg-white p-3 d-flex flex-row align-items-center justify-content-between">
-                    <div>
-                        <h6 class="text-muted small text-uppercase mb-1">Total Unik Barcode</h6>
-                        <h3 id="statTotalItems" class="fw-bold text-dark mb-0">0</h3>
-                    </div>
+                    <div><h6 class="text-muted small text-uppercase mb-1">Total Unik Barcode</h6><h3 id="statTotalItems" class="fw-bold mb-0">0</h3></div>
                     <div class="fs-1 text-primary">📦</div>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="card card-stat bg-white p-3 d-flex flex-row align-items-center justify-content-between">
-                    <div>
-                        <h6 class="text-muted small text-uppercase mb-1">Total Qty Fisik Ter-scan</h6>
-                        <h3 id="statTotalQty" class="fw-bold text-success mb-0">0</h3>
-                    </div>
+                    <div><h6 class="text-muted small text-uppercase mb-1">Total Qty Ter-scan</h6><h3 id="statTotalQty" class="fw-bold text-success mb-0">0</h3></div>
                     <div class="fs-1 text-success">🔢</div>
                 </div>
             </div>
             <div class="col-md-4">
                 <div class="card card-stat bg-white p-3 d-flex flex-row align-items-center justify-content-between">
-                    <div>
-                        <h6 class="text-muted small text-uppercase mb-1">Status Sinkronisasi</h6>
-                        <h3 class="fw-bold text-warning mb-0 fs-5">⚡ LIVE AUTO-REFRESH</h3>
-                    </div>
+                    <div><h6 class="text-muted small text-uppercase mb-1">Status Sinkronisasi</h6><h3 class="fw-bold text-warning mb-0 fs-5">⚡ LIVE AUTOMATIC</h3></div>
                 </div>
             </div>
         </div>
+
         <div class="row g-4">
             <div class="col-lg-4">
                 <div class="table-container mb-4">
                     <h5 class="fw-bold text-dark mb-3">⚙️ Update Master Produk</h5>
-                    <p class="text-muted small">Upload ulang file master Excel terbarumu di bawah ini jika ada barcode baru gess:</p>
                     <form id="uploadMasterForm">
-                        <div class="mb-3">
-                            <input class="form-control form-control-sm" type="file" id="masterFile" accept=".xlsx" required>
-                        </div>
+                        <div class="mb-3"><input class="form-control form-control-sm" type="file" id="masterFile" accept=".xlsx" required></div>
                         <button type="submit" class="btn btn-primary btn-sm w-100 fw-bold">📤 Upload Master</button>
                     </form>
                     <div id="uploadStatus" class="mt-2 small fw-bold text-center"></div>
                 </div>
+
+                <div class="table-container">
+                    <h5 class="fw-bold text-dark mb-2">📍 Tambah / Kelola Zona Kerja</h5>
+                    <p class="text-muted" style="font-size: 11px;">Gunakan form ini jika ingin menyuntikkan Zona Operasional baru secara instan gess:</p>
+                    <div class="input-group mb-3">
+                        <input type="text" id="newZoneName" class="form-control form-control-sm" placeholder="Contoh: ZONA COLDROOM" style="text-transform: uppercase;">
+                        <button onclick="addNewZone()" class="btn btn-dark btn-sm fw-bold">➕ Tambah</button>
+                    </div>
+                    <div class="fw-bold small text-secondary mb-1">Daftar Zona Aktif Saat Ini:</div>
+                    <ul class="list-group list-group-flush border rounded" id="zoneListContainer" style="max-height: 150px; overflow-y: auto; font-size: 13px;">
+                        <li class="list-group-item text-muted text-center py-2">Loading data zona...</li>
+                    </ul>
+                </div>
             </div>
+
             <div class="col-lg-8">
                 <div class="table-container">
                     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -146,8 +167,13 @@ def super_user_page():
             </div>
         </div>
     </div>
+
     <script>
-        setInterval(fetchLiveRecords, 3000);
+        setInterval(function() {
+            fetchLiveRecords();
+            renderActiveZones();
+        }, 3000);
+
         function fetchLiveRecords() {
             fetch('/api/products')
             .then(res => res.json())
@@ -181,8 +207,33 @@ def super_user_page():
                 tbody.innerHTML = htmlContent;
                 document.getElementById('statTotalItems').innerText = data.length;
                 document.getElementById('statTotalQty').innerText = grandTotalQty;
-            }).catch(err => console.error("Gagal mengambil data live:", err));
+            }).catch(err => console.error(err));
         }
+
+        function renderActiveZones() {
+            fetch('/api/zones')
+            .then(res => res.json())
+            .then(zones => {
+                const container = document.getElementById('zoneListContainer');
+                let html = '';
+                zones.forEach(z => {
+                    html += `<li class="list-group-item py-1 d-flex justify-content-between align-items-center">🔹 ${z}</li>`;
+                });
+                container.innerHTML = html || `<li class="list-group-item text-muted text-center py-2">Tidak ada zona terdaftar</li>`;
+            });
+        }
+
+        function addNewZone() {
+            const el = document.getElementById('newZoneName');
+            const name = el.value.trim().toUpperCase();
+            if(!name) return;
+            fetch('/api/zones', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ zona: name })
+            }).then(res => res.json()).then(d => { el.value = ''; renderActiveZones(); });
+        }
+
         function saveQtyCorrection(rowId) {
             const inputField = document.getElementById('qty_input_' + rowId);
             const newQty = parseInt(inputField.value);
@@ -191,11 +242,9 @@ def super_user_page():
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: rowId, qty: newQty })
-            })
-            .then(res => res.json())
-            .then(d => { if(d.status === 'success') { alert("✅ Koreksi berhasil!"); fetchLiveRecords(); } })
-            .catch(err => alert("Koneksi gagal!"));
+            }).then(res => res.json()).then(d => { if(d.status === 'success') { alert("✅ Koreksi berhasil!"); fetchLiveRecords(); } });
         }
+
         document.getElementById('uploadMasterForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const formData = new FormData();
@@ -205,13 +254,26 @@ def super_user_page():
             .then(res => res.json())
             .then(d => { document.getElementById('uploadStatus').innerHTML = d.status === 'success' ? "<span class='text-success'>✅ Sukses!</span>" : "<span class='text-danger'>❌ Gagal</span>"; });
         });
+
         fetchLiveRecords();
+        renderActiveZones();
     </script>
 </body>
 </html>
     '''
 
-# ==================== API BACKEND ENDPOINTS ====================
+# ==================== CONTROLLER BACKEND API ZONA ====================
+
+@app.route('/api/zones', methods=['GET', 'POST'])
+def handle_zones_api():
+    global custom_zones
+    if request.method == 'POST':
+        data = request.json or {}
+        new_z = str(data.get('zona', '')).strip().upper()
+        if new_z and new_z not in custom_zones:
+            custom_zones.append(new_z)
+        return jsonify({'status': 'success'})
+    return jsonify(get_active_zones())
 
 @app.route('/api/products', methods=['GET'])
 def get_live_products():
@@ -244,7 +306,6 @@ def process_scan():
 
     if not product.empty:
         prod_data = product.iloc[0]
-        
         if data.get('check_only') is True:
             return jsonify({
                 'status': 'success',
