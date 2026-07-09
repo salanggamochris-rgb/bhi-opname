@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # CONFIGURATION: Nama file master dan file simpan database lokal
 MASTER_FILE = 'master_produk.xlsx'
-OUTPUT_FILE = '/tmp/hasil_opname.xlsx'  # Folder /tmp agar bisa ditulis secara aman di serverless Vercel
+OUTPUT_FILE = '/tmp/hasil_opname.xlsx'  # Folder /tmp agar writeable di Vercel Serverless
 
 # Counter untuk ID unik baris data hasil scan & penampung RAM real-time
 scan_id_counter = 1
@@ -29,9 +29,9 @@ def load_master_data():
 df_master = load_master_data()
 
 @app.route('/')
-def index():
-    # Halaman login awal petugas memilih nama dan zona kerja
-    return render_template('index.html')
+def login_page():
+    # DISINI KITA KUNCI: Memanggil login.html sesuai file aslimu gess!
+    return render_template('login.html')
 
 @app.route('/scan')
 def scan_page():
@@ -40,12 +40,12 @@ def scan_page():
     zona = request.args.get('zona', '-')
     return render_template('scan.html', petugas=petugas, zona=zona)
 
-
 # =========================================================================
-# 🛡️ ROUTE SUPER USER: LANGSUNG DI-RENDER LEWAT PYTHON (ANTI ERROR 500 / NOT FOUND)
+# 🛡️ ROUTE SUPER USER & ADMIN: LANGSUNG DI-RENDER LEWAT INLINE STRING HTML
 # =========================================================================
 @app.route('/super-user')
 @app.route('/superuser')
+@app.route('/admin')
 def super_user_page():
     return '''
 <!DOCTYPE html>
@@ -66,11 +66,10 @@ def super_user_page():
     </style>
 </head>
 <body>
-
     <nav class="navbar navbar-expand-lg navbar-dark navbar-custom py-3">
         <div class="container">
             <a class="navbar-brand fw-bold d-flex align-items-center" href="#">
-                🛡️ <span class="ms-2">BHI Opname - Super User Panel</span>
+                🛡️ <span class="ms-2">BHI Opname - Admin Panel</span>
             </a>
             <div class="d-flex gap-2">
                 <a href="/api/download" class="btn btn-success fw-bold px-4">📥 Download Excel (.xlsx)</a>
@@ -78,7 +77,6 @@ def super_user_page():
             </div>
         </div>
     </nav>
-
     <div class="container my-4">
         <div class="row g-3 mb-4">
             <div class="col-md-4">
@@ -108,7 +106,6 @@ def super_user_page():
                 </div>
             </div>
         </div>
-
         <div class="row g-4">
             <div class="col-lg-4">
                 <div class="table-container mb-4">
@@ -123,7 +120,6 @@ def super_user_page():
                     <div id="uploadStatus" class="mt-2 small fw-bold text-center"></div>
                 </div>
             </div>
-
             <div class="col-lg-8">
                 <div class="table-container">
                     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -136,7 +132,7 @@ def super_user_page():
                                 <tr>
                                     <th>📍 Rak</th>
                                     <th>👤 Petugas</th>
-                                    <th>📦 Produk</th>
+                                    <th>📦 Detail Produk</th>
                                     <th class="text-center" style="width: 120px;">🔢 Qty Fisik</th>
                                     <th class="text-center">Aksi</th>
                                 </tr>
@@ -150,51 +146,47 @@ def super_user_page():
             </div>
         </div>
     </div>
-
     <script>
         setInterval(fetchLiveRecords, 3000);
-
         function fetchLiveRecords() {
             fetch('/api/products')
             .then(res => res.json())
             .then(data => {
                 const tbody = document.getElementById('liveTableBody');
-                if (data.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-5">Belum ada aktivitas scan.</td></tr>`;
+                if (!data || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">Belum ada aktivitas scan dari petugas gudang.</td></tr>';
                     document.getElementById('statTotalItems').innerText = '0';
                     document.getElementById('statTotalQty').innerText = '0';
                     return;
                 }
                 let htmlContent = ''; let grandTotalQty = 0;
-                data.forEach(item => {
+                for (let i = 0; i < data.length; i++) {
+                    let item = data[i];
                     grandTotalQty += item.qty;
-                    htmlContent += `
-                        <tr>
-                            <td><span class="badge bg-dark fw-bold fs-6">${item.sublokasi}</span></td>
-                            <td><strong class="text-secondary">${item.petugas}</strong></td>
-                            <td>
-                                <div class="fw-bold text-dark small mb-0">${item.product_name}</div>
-                                <div class="text-muted" style="font-size: 11px;">Barcode: <code>${item.barcode}</code> | SKU: ${item.sku}</div>
-                            </td>
-                            <td class="text-center">
-                                <input type="number" id="qty_input_\${item.id}" class="form-control form-control-sm qty-input-edit d-inline-block" value="\${item.qty}">
-                            </td>
-                            <td class="text-center">
-                                <button onclick="saveQtyCorrection(\${item.id})" class="btn btn-sm btn-success py-1 px-2 fw-bold">Simpan</button>
-                            </td>
-                        </tr>`;
-                });
+                    htmlContent += '<tr>' +
+                        '<td><span class="badge bg-dark fw-bold fs-6">' + item.sublokasi + '</span><br><small class="text-muted">Zona: ' + item.zona + '</small></td>' +
+                        '<td><strong class="text-secondary">' + item.petugas + '</strong></td>' +
+                        '<td>' +
+                            '<div class="fw-bold text-dark small mb-0">' + item.product_name + '</div>' +
+                            '<div class="text-muted" style="font-size: 11px;">Barcode: <code>' + item.barcode + '</code> | SKU: ' + item.sku + ' | Brand: ' + item.brand + ' | Var: ' + item.variant + '</div>' +
+                        '</td>' +
+                        '<td class="text-center">' +
+                            '<input type="number" id="qty_input_' + item.id + '" class="form-control form-control-sm qty-input-edit d-inline-block" value="' + item.qty + '">' +
+                        '</td>' +
+                        '<td class="text-center">' +
+                            '<button onclick="saveQtyCorrection(' + item.id + ')" class="btn btn-sm btn-success py-1 px-2 fw-bold">Simpan</button>' +
+                        '</td>' +
+                    '</tr>';
+                }
                 tbody.innerHTML = htmlContent;
                 document.getElementById('statTotalItems').innerText = data.length;
                 document.getElementById('statTotalQty').innerText = grandTotalQty;
-            }).catch(err => console.log("Gagal mengambil data live:", err));
+            }).catch(err => console.error("Gagal mengambil data live:", err));
         }
-
         function saveQtyCorrection(rowId) {
-            const inputField = document.getElementById(\`qty_input_\${rowId}\`);
+            const inputField = document.getElementById('qty_input_' + rowId);
             const newQty = parseInt(inputField.value);
             if (isNaN(newQty) || newQty < 0) { alert("Qty harus angka valid!"); return; }
-
             fetch('/api/update-qty', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -204,7 +196,6 @@ def super_user_page():
             .then(d => { if(d.status === 'success') { alert("✅ Koreksi berhasil!"); fetchLiveRecords(); } })
             .catch(err => alert("Koneksi gagal!"));
         }
-
         document.getElementById('uploadMasterForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const formData = new FormData();
@@ -214,7 +205,6 @@ def super_user_page():
             .then(res => res.json())
             .then(d => { document.getElementById('uploadStatus').innerHTML = d.status === 'success' ? "<span class='text-success'>✅ Sukses!</span>" : "<span class='text-danger'>❌ Gagal</span>"; });
         });
-
         fetchLiveRecords();
     </script>
 </body>
@@ -230,7 +220,6 @@ def get_live_products():
 @app.route('/api/scan', methods=['POST'])
 def process_scan():
     global scan_id_counter, df_master
-    
     if df_master.empty:
         df_master = load_master_data()
 
@@ -256,7 +245,6 @@ def process_scan():
     if not product.empty:
         prod_data = product.iloc[0]
         
-        # JALUR 1: Hanya Verifikasi Cek Barcode (sebelum input Qty manual)
         if data.get('check_only') is True:
             return jsonify({
                 'status': 'success',
@@ -265,7 +253,6 @@ def process_scan():
                 'message': 'Produk terdaftar'
             }), 200
 
-        # JALUR 2: Simpan Data Final ke RAM
         existing_item = next((item for item in scan_results if item['barcode'] == barcode_input 
                               and item['petugas'] == petugas 
                               and item['zona'] == zona 
@@ -323,7 +310,6 @@ def upload_master():
     file = request.files['file']
     if file.filename == '':
         return jsonify({'status': 'error', 'message': 'Nama file kosong!'}), 400
-    
     try:
         file.save(MASTER_FILE)
         df_master = load_master_data()
@@ -338,7 +324,6 @@ def download_excel():
     else:
         df_export = pd.DataFrame(scan_results)
         df_export.columns = ['ID', 'Petugas', 'Zona', 'Sublokasi/Rak', 'Barcode', 'SKU', 'Brand', 'Nama Produk', 'Varian', 'Qty Fisik']
-    
     df_export.to_excel(OUTPUT_FILE, index=False)
     return send_file(OUTPUT_FILE, as_attachment=True)
 
