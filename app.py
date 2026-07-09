@@ -4,66 +4,70 @@ import os
 
 app = Flask(__name__)
 
-# CONFIGURATION: Nama file master dan file simpan database lokal
+# CONFIGURATION: Lokasi file master
 MASTER_FILE = 'master_produk.xlsx'
-OUTPUT_FILE = 'hasil_opname.xlsx'
+OUTPUT_FILE = '/tmp/hasil_opname.xlsx'  # Menggunakan folder /tmp agar writeable di serverless
 
-# Counter untuk ID unik baris data hasil scan
+# Counter ID & List penampung data live scan
 scan_id_counter = 1
-
-# Dummy data list untuk menampung hasil scan sementara di memory RAM
 scan_results = []
 
-# Load database master produk saat aplikasi pertama kali dijalankan
-if os.path.exists(MASTER_FILE):
-    df_master = pd.read_excel(MASTER_FILE)
-    # Bersihkan nama kolom agar huruf kecil semua dan tidak ada spasi liar
-    df_master.columns = df_master.columns.str.strip().str.lower()
-    # Pastikan tipe data barcode di-force ke string biar match saat dicocokkan
-    if 'barcode' in df_master.columns:
-        df_master['barcode'] = df_master['barcode'].astype(str).str.strip()
-else:
-    # Buat dataframe template kosong jika file excel master belum ada
-    df_master = pd.DataFrame(columns=['barcode', 'sku', 'brand', 'product_name', 'variant'])
+def load_master_data():
+    """Fungsi pembantu loading data excel secara aman"""
+    if os.path.exists(MASTER_FILE):
+        try:
+            df = pd.read_excel(MASTER_FILE)
+            df.columns = df.columns.str.strip().str.lower()
+            if 'barcode' in df.columns:
+                df['barcode'] = df['barcode'].astype(str).str.strip()
+            return df
+        except Exception:
+            return pd.DataFrame(columns=['barcode', 'sku', 'brand', 'product_name', 'variant'])
+    return pd.DataFrame(columns=['barcode', 'sku', 'brand', 'product_name', 'variant'])
+
+# Inisialisasi awal database master produk
+df_master = load_master_data()
 
 @app.route('/')
 def index():
-    # Halaman login awal petugas memilih nama dan zona kerja
     return render_template('index.html')
 
 @app.route('/scan')
 def scan_page():
-    # Mengambil parameter identitas petugas dari URL redirect halaman login
     petugas = request.args.get('petugas', 'Anonymous')
     zona = request.args.get('zona', '-')
     return render_template('scan.html', petugas=petugas, zona=zona)
 
-
-# JALUR PADAT AMAN: Kita daftarkan kedua alamat alternatif ini agar tidak memicu 404 lagi!
+# Route ganda biar gak typo memicu 404/500
 @app.route('/super-user')
 @app.route('/superuser')
 def super_user_page():
-    # Halaman monitoring live dashboard monitoring
-    return render_template('super_user.html')
-
+    # Menghindari crash jika template dicari serverless
+    try:
+        return render_template('super_user.html')
+    except Exception as e:
+        return f"Template super_user.html tidak ditemukan atau rusak: {str(e)}", 500
 
 # ==================== API ENDPOINTS ====================
 
 @app.route('/api/products', methods=['GET'])
 def get_live_products():
-    # Mengirimkan data tumpukan hasil scan real-time ke tabel dashboard super-user
     return jsonify(scan_results)
 
 @app.route('/api/scan', methods=['POST'])
 def process_scan():
-    global scan_id_counter
-    data = request.json
+    global scan_id_counter, df_master
+    
+    # Reload berkala jika berjalan di environment serverless stateless
+    if df_master.empty:
+        df_master = load_master_data()
+
+    data = request.json or {}
     barcode_input = str(data.get('barcode', '')).strip()
-    petugas = data.get('petugas')
-    zona = data.get('zona')
+    petugas = data.get('petugas', 'Anonymous')
+    zona = data.get('zona', '-')
     sublokasi = data.get('sublokasi', '-').strip().upper()
     
-    # Ambil nilai kuantitas inputan manual dari petugas (jika kosong, default ke 1)
     try:
         qty_input = int(data.get('qty', 1))
     except (ValueError, TypeError):
@@ -72,43 +76,43 @@ def process_scan():
     if not sublokasi or sublokasi == '-':
         return jsonify({'status': 'error', 'message': '⚠️ SILAKAN SCAN QR CODE RAK TERLEBIH DAHULU!'}), 400
 
-    # Pencarian ke basis data master Excel
+    if df_master.empty:
+        return jsonify({'status': 'error', 'message': '❌ File master_produk.xlsx kosong atau tidak terbaca di server!'}), 500
+
     product = df_master[df_master['barcode'] == barcode_input]
 
     if not product.empty:
         prod_data = product.iloc[0]
         
-        # JALUR A: Jika request hanya untuk memverifikasi detail info produk saat kursor bergeser
+        # JALUR CHECKING (Selesai Scan Barcode, sebelum isi Qty)
         if data.get('check_only') is True:
             return jsonify({
                 'status': 'success',
-                'nama_produk': str(prod_data['product_name']),
-                'variant': str(prod_data['variant']),
+                'nama_produk': str(prod_data.get('product_name', 'Unknown')),
+                'variant': str(prod_data.get('variant', '-')),
                 'message': 'Produk terdaftar'
             }), 200
 
-        # JALUR B: Proses simpan data final setelah input Qty manual dikirim
+        # JALUR SIMPAN DATA FIX
         existing_item = next((item for item in scan_results if item['barcode'] == barcode_input 
                               and item['petugas'] == petugas 
                               and item['zona'] == zona 
                               and item['sublokasi'] == sublokasi), None)
         
         if existing_item:
-            # Akumulasikan kuantitas lama di lokasi rak yang sama dengan input baru
             existing_item['qty'] += qty_input
             current_qty = existing_item['qty']
         else:
-            # Rekam record baris data baru ke database memori
             new_scan = {
                 'id': scan_id_counter,
                 'petugas': petugas,
                 'zona': zona,
                 'sublokasi': sublokasi,
                 'barcode': barcode_input,
-                'sku': str(prod_data['sku']),
-                'brand': str(prod_data['brand']),
-                'product_name': str(prod_data['product_name']),
-                'variant': str(prod_data['variant']),
+                'sku': str(prod_data.get('sku', '-')),
+                'brand': str(prod_data.get('brand', '-')),
+                'product_name': str(prod_data.get('product_name', 'Unknown')),
+                'variant': str(prod_data.get('variant', '-')),
                 'qty': qty_input
             }
             scan_results.append(new_scan)
@@ -117,8 +121,8 @@ def process_scan():
 
         return jsonify({
             'status': 'success',
-            'nama_produk': str(prod_data['product_name']),
-            'variant': str(prod_data['variant']),
+            'nama_produk': str(prod_data.get('product_name', 'Unknown')),
+            'variant': str(prod_data.get('variant', '-')),
             'qty': current_qty
         }), 200
     else:
@@ -126,10 +130,12 @@ def process_scan():
 
 @app.route('/api/update-qty', methods=['POST'])
 def update_qty_manual():
-    # Endpoint koreksi instan nilai Qty dari tabel Live Monitoring Super User
-    data = request.json
-    row_id = int(data.get('id'))
-    new_qty = int(data.get('qty', 0))
+    data = request.json or {}
+    try:
+        row_id = int(data.get('id'))
+        new_qty = int(data.get('qty', 0))
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Data ID atau Qty tidak valid!'}), 400
     
     for item in scan_results:
         if item['id'] == row_id:
@@ -139,7 +145,6 @@ def update_qty_manual():
 
 @app.route('/api/upload-master', methods=['POST'])
 def upload_master():
-    # Endpoint upload update Excel Master Produk terbaru dari Dashboard
     global df_master
     if 'file' not in request.files:
         return jsonify({'status': 'error', 'message': 'Tidak ada file diunggah!'}), 400
@@ -149,19 +154,14 @@ def upload_master():
     
     try:
         file.save(MASTER_FILE)
-        df_master = pd.read_excel(MASTER_FILE)
-        df_master.columns = df_master.columns.str.strip().str.lower()
-        if 'barcode' in df_master.columns:
-            df_master['barcode'] = df_master['barcode'].astype(str).str.strip()
+        df_master = load_master_data()
         return jsonify({'status': 'success', 'message': 'Master Excel Sukses Diperbarui!'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Gagal membaca file: {str(e)}'}), 500
 
 @app.route('/api/download', methods=['GET'])
 def download_excel():
-    # Compile list RAM menjadi file Excel fisik saat tombol download diklik
     if not scan_results:
-        # Jika kosong, buatkan dataframe dummy struktur kolomnya saja biar tidak error crash
         df_export = pd.DataFrame(columns=['ID', 'Petugas', 'Zona', 'Sublokasi/Rak', 'Barcode', 'SKU', 'Brand', 'Nama Produk', 'Varian', 'Qty Fisik'])
     else:
         df_export = pd.DataFrame(scan_results)
@@ -169,6 +169,10 @@ def download_excel():
     
     df_export.to_excel(OUTPUT_FILE, index=False)
     return send_file(OUTPUT_FILE, as_attachment=True)
+
+# Handler khusus Vercel Serverless WSGI
+def handler(environ, start_response):
+    return app(environ, start_response)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
