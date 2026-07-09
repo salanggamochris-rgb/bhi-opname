@@ -9,18 +9,20 @@ app.secret_key = "bhi_opname_secret_key"
 EXCEL_FILE = "master_produk.xlsx"
 if os.path.exists(EXCEL_FILE):
     df_master = pd.read_excel(EXCEL_FILE)
-    # Memastikan barcode dibaca sebagai string agar tidak kehilangan angka 0 di depan
     df_master['barcode'] = df_master['barcode'].astype(str).str.strip()
 else:
     df_master = pd.DataFrame(columns=['barcode', 'sku', 'brand', 'product_name', 'variant'])
 
-# Penyimpanan data scan real-time di memori server lokal
+# Data Penyimpanan Utama (Di Memori Server)
 scan_results = []
 scan_id_counter = 1
+# Default Zona Awal (Bisa ditambah/dihapus oleh Super User lewat Web)
+master_zona = ["PICKFACE", "BULK", "RESERVE", "SHIPPING"]
 
 @app.route('/')
 def login():
-    return render_template('login.html')
+    # Mengirim daftar master_zona ke halaman login user
+    return render_template('login.html', master_zona=master_zona)
 
 @app.route('/scan', methods=['GET', 'POST'])
 def scan_page():
@@ -29,8 +31,6 @@ def scan_page():
         zona = request.form.get('zona')
         sublokasi = request.form.get('sublokasi')
         return render_template('scan.html', petugas=petugas, zona=zona, sublokasi=sublokasi)
-    
-    # Jika di-refresh tanpa data login, tendang balik ke halaman login
     return redirect(url_for('login'))
 
 @app.route('/api/scan', methods=['POST'])
@@ -42,13 +42,10 @@ def process_scan():
     zona = data.get('zona')
     sublokasi = data.get('sublokasi')
 
-    # Cari data barang di dataframe master produk
     product = df_master[df_master['barcode'] == barcode_input]
 
     if not product.empty:
         prod_data = product.iloc[0]
-        
-        # Cek apakah petugas yang sama sudah pernah scan barang yang sama di sublokasi yang sama
         existing_item = next((item for item in scan_results if item['barcode'] == barcode_input 
                               and item['petugas'] == petugas 
                               and item['zona'] == zona 
@@ -87,10 +84,6 @@ def process_scan():
 def superuser_dashboard():
     selected_zona = request.args.get('filter_zona', '')
     
-    # Mengambil list unik zona untuk pilihan dropdown filter
-    all_zonas = sorted(list(set([str(item['zona']) for item in scan_results if item.get('zona')])))
-    
-    # Lakukan filtering jika filter zona dipilih oleh superuser
     if selected_zona:
         filtered_results = [item for item in scan_results if str(item.get('zona')) == selected_zona]
     else:
@@ -98,8 +91,23 @@ def superuser_dashboard():
         
     return render_template('admin.html', 
                            results=filtered_results, 
-                           all_zonas=all_zonas, 
+                           master_zona=master_zona, 
                            selected_zona=selected_zona)
+
+# Route untuk Menambah Zona Baru dari Web
+@app.route('/superuser/add_zona', methods=['POST'])
+def add_zona():
+    new_zona_name = request.form.get('new_zona', '').strip().upper()
+    if new_zona_name and new_zona_name not in master_zona:
+        master_zona.append(new_zona_name)
+    return redirect(url_for('superuser_dashboard'))
+
+# Route untuk Menghapus Zona dari Web
+@app.route('/superuser/delete_zona/<string:zona_name>', methods=['POST'])
+def delete_zona(zona_name):
+    if zona_name in master_zona:
+        master_zona.remove(zona_name)
+    return redirect(url_for('superuser_dashboard'))
 
 @app.route('/superuser/edit/<int:scan_id>', methods=['POST'])
 def edit_qty(scan_id):
@@ -124,17 +132,12 @@ def reset_data():
 @app.route('/superuser/download')
 def download_excel():
     if not scan_results:
-        return "Belum ada data scan yang tersimpan untuk di-download.", 400
-        
+        return "Belum ada data scan.", 400
     df_download = pd.DataFrame(scan_results)
-    # Hapus kolom ID agar hasil export Excel bersih rapi
     if 'id' in df_download.columns:
         df_download = df_download.drop(columns=['id'])
-        
-    # Reorder urutan kolom biar mantap pas dibaca tim management
     cols = ['petugas', 'zona', 'sublokasi', 'barcode', 'sku', 'brand', 'product_name', 'variant', 'qty']
     df_download = df_download[cols]
-    
     output_file = "Hasil_Opname_BHI.xlsx"
     df_download.to_excel(output_file, index=False)
     return send_file(output_file, as_attachment=True)
