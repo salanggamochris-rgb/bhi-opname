@@ -3,36 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Masuk Sistem Opname - Warehouse BHI</title>
+    <title>Login Petugas - BHI Opname</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #f8f9fa; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-        .login-card { background: white; border-radius: 12px; padding: 30px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); width: 100%; max-width: 450px; }
+        body { 
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); 
+            height: 100vh; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+        }
+        .login-card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            width: 100%;
+            max-width: 400px;
+        }
     </style>
 </head>
 <body>
-    <div class="login-card">
-        <h1 class="text-primary fw-bold text-center mb-2">Warehouse BHI</h1>
-        <h4 class="text-secondary text-center mb-4">Masuk Sistem Opname</h4>
-        
-        <form action="/scan" method="POST">
-            <div class="mb-3">
-                <label for="petugas" class="form-label fw-bold">Nama Lengkap Anda</label>
-                <input type="text" class="form-control form-control-lg" id="petugas" name="petugas" placeholder="Contoh: Chris" required>
+    <div class="container d-flex justify-content-center">
+        <div class="login-card">
+            <div class="text-center mb-4">
+                <span class="fs-1">📦</span>
+                <h4 class="fw-bold text-dark mt-2">BHI Stock Opname</h4>
+                <p class="text-muted small">Silakan pilih identitas tugas Anda gess</p>
             </div>
-
-            <div class="mb-4">
-                <label for="zona" class="form-label fw-bold">Pilih Zona Kerja</label>
-                <select class="form-select form-control-lg" id="zona" name="zona" required>
-                    <option value="" disabled selected>-- Pilih Zona --</option>
-                    {% for zona in master_zona %}
-                    <option value="{{ zona }}">{{ zona }}</option>
-                    {% endfor %}
-                </select>
+            <form action="/scan" method="GET" id="loginForm">
+                <div class="mb-3">
+                    <label for="petugas" class="form-label fw-bold text-secondary">👤 Nama Petugas</label>
+                    <input type="text" class="form-control form-control-lg" id="petugas" name="petugas" placeholder="Nama lengkap Anda..." required autocomplete="off">
+                </div>
+                <div class="mb-4">
+                    <label for="zona" class="form-label fw-bold text-secondary">📍 Zona Kerja</label>
+                    <select class="form-select form-control-lg" id="zona" name="zona" required>
+                        <option value="" disabled selected>-- Pilih Zona Lokasi --</option>
+                        <option value="A">ZONA A</option>
+                        <option value="B">ZONA B</option>
+                        <option value="C">ZONA C</option>
+                        <option value="D">ZONA D</option>
+                        <option value="E">ZONA E</option>
+                        <option value="BULK">ZONA BULK</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold shadow-sm">Masuk Sesi Scan 🚀</button>
+            </form>
+            <div class="text-center mt-4">
+                <a href="/super-user" class="text-decoration-none small text-muted">🛡️ Masuk sebagai Admin / Super User</a>
             </div>
-
-            <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">Masuk ke Scanner</button>
-        </form>
+        </div>
     </div>
+    <script>
+        window.onload = function() {
+            document.getElementById('petugas').focus();
+        };
+    </script>
 </body>
 </html>
