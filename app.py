@@ -4,16 +4,16 @@ import os
 
 app = Flask(__name__)
 
-# CONFIGURATION: Lokasi file master
+# CONFIGURATION: Nama file master dan file simpan database lokal
 MASTER_FILE = 'master_produk.xlsx'
-OUTPUT_FILE = '/tmp/hasil_opname.xlsx'  # Menggunakan folder /tmp agar writeable di serverless
+OUTPUT_FILE = '/tmp/hasil_opname.xlsx'  # Folder /tmp agar bisa ditulis secara aman di serverless Vercel
 
-# Counter ID & List penampung data live scan
+# Counter untuk ID unik baris data hasil scan & penampung RAM real-time
 scan_id_counter = 1
 scan_results = []
 
 def load_master_data():
-    """Fungsi pembantu loading data excel secara aman"""
+    """Fungsi pembantu membaca data Excel Master secara aman"""
     if os.path.exists(MASTER_FILE):
         try:
             df = pd.read_excel(MASTER_FILE)
@@ -30,25 +30,198 @@ df_master = load_master_data()
 
 @app.route('/')
 def index():
+    # Halaman login awal petugas memilih nama dan zona kerja
     return render_template('index.html')
 
 @app.route('/scan')
 def scan_page():
+    # Mengambil parameter identitas petugas dari URL
     petugas = request.args.get('petugas', 'Anonymous')
     zona = request.args.get('zona', '-')
     return render_template('scan.html', petugas=petugas, zona=zona)
 
-# Route ganda biar gak typo memicu 404/500
+
+# =========================================================================
+# 🛡️ ROUTE SUPER USER: LANGSUNG DI-RENDER LEWAT PYTHON (ANTI ERROR 500 / NOT FOUND)
+# =========================================================================
 @app.route('/super-user')
 @app.route('/superuser')
 def super_user_page():
-    # Menghindari crash jika template dicari serverless
-    try:
-        return render_template('super_user.html')
-    except Exception as e:
-        return f"Template super_user.html tidak ditemukan atau rusak: {str(e)}", 500
+    return '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super User Dashboard - Live Stock Opname</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .navbar-custom { background: #1e293b; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .card-stat { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: transform 0.2s; }
+        .card-stat:hover { transform: translateY(-3px); }
+        .table-container { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .table th { background-color: #f8fafc; color: #64748b; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+        .qty-input-edit { width: 80px; text-align: center; }
+    </style>
+</head>
+<body>
 
-# ==================== API ENDPOINTS ====================
+    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom py-3">
+        <div class="container">
+            <a class="navbar-brand fw-bold d-flex align-items-center" href="#">
+                🛡️ <span class="ms-2">BHI Opname - Super User Panel</span>
+            </a>
+            <div class="d-flex gap-2">
+                <a href="/api/download" class="btn btn-success fw-bold px-4">📥 Download Excel (.xlsx)</a>
+                <a href="/" class="btn btn-outline-light btn-sm">Halaman Login</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container my-4">
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card card-stat bg-white p-3 d-flex flex-row align-items-center justify-content-between">
+                    <div>
+                        <h6 class="text-muted small text-uppercase mb-1">Total Unik Barcode</h6>
+                        <h3 id="statTotalItems" class="fw-bold text-dark mb-0">0</h3>
+                    </div>
+                    <div class="fs-1 text-primary">📦</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card card-stat bg-white p-3 d-flex flex-row align-items-center justify-content-between">
+                    <div>
+                        <h6 class="text-muted small text-uppercase mb-1">Total Qty Fisik Ter-scan</h6>
+                        <h3 id="statTotalQty" class="fw-bold text-success mb-0">0</h3>
+                    </div>
+                    <div class="fs-1 text-success">🔢</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card card-stat bg-white p-3 d-flex flex-row align-items-center justify-content-between">
+                    <div>
+                        <h6 class="text-muted small text-uppercase mb-1">Status Sinkronisasi</h6>
+                        <h3 class="fw-bold text-warning mb-0 fs-5">⚡ LIVE AUTO-REFRESH</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="table-container mb-4">
+                    <h5 class="fw-bold text-dark mb-3">⚙️ Update Master Produk</h5>
+                    <p class="text-muted small">Upload ulang file master Excel terbarumu di bawah ini jika ada barcode baru gess:</p>
+                    <form id="uploadMasterForm">
+                        <div class="mb-3">
+                            <input class="form-control form-control-sm" type="file" id="masterFile" accept=".xlsx" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm w-100 fw-bold">📤 Upload Master</button>
+                    </form>
+                    <div id="uploadStatus" class="mt-2 small fw-bold text-center"></div>
+                </div>
+            </div>
+
+            <div class="col-lg-8">
+                <div class="table-container">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold text-dark mb-0">📋 Data Hasil Scan Real-Time</h5>
+                        <button onclick="fetchLiveRecords()" class="btn btn-sm btn-outline-secondary">🔄 Refresh</button>
+                    </div>
+                    <div class="table-responsive" style="max-height: 500px;">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>📍 Rak</th>
+                                    <th>👤 Petugas</th>
+                                    <th>📦 Produk</th>
+                                    <th class="text-center" style="width: 120px;">🔢 Qty Fisik</th>
+                                    <th class="text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="liveTableBody">
+                                <tr><td colspan="5" class="text-center text-muted py-5">Menunggu data scan petugas...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        setInterval(fetchLiveRecords, 3000);
+
+        function fetchLiveRecords() {
+            fetch('/api/products')
+            .then(res => res.json())
+            .then(data => {
+                const tbody = document.getElementById('liveTableBody');
+                if (data.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-5">Belum ada aktivitas scan.</td></tr>`;
+                    document.getElementById('statTotalItems').innerText = '0';
+                    document.getElementById('statTotalQty').innerText = '0';
+                    return;
+                }
+                let htmlContent = ''; let grandTotalQty = 0;
+                data.forEach(item => {
+                    grandTotalQty += item.qty;
+                    htmlContent += `
+                        <tr>
+                            <td><span class="badge bg-dark fw-bold fs-6">${item.sublokasi}</span></td>
+                            <td><strong class="text-secondary">${item.petugas}</strong></td>
+                            <td>
+                                <div class="fw-bold text-dark small mb-0">${item.product_name}</div>
+                                <div class="text-muted" style="font-size: 11px;">Barcode: <code>${item.barcode}</code> | SKU: ${item.sku}</div>
+                            </td>
+                            <td class="text-center">
+                                <input type="number" id="qty_input_\${item.id}" class="form-control form-control-sm qty-input-edit d-inline-block" value="\${item.qty}">
+                            </td>
+                            <td class="text-center">
+                                <button onclick="saveQtyCorrection(\${item.id})" class="btn btn-sm btn-success py-1 px-2 fw-bold">Simpan</button>
+                            </td>
+                        </tr>`;
+                });
+                tbody.innerHTML = htmlContent;
+                document.getElementById('statTotalItems').innerText = data.length;
+                document.getElementById('statTotalQty').innerText = grandTotalQty;
+            }).catch(err => console.log("Gagal mengambil data live:", err));
+        }
+
+        function saveQtyCorrection(rowId) {
+            const inputField = document.getElementById(\`qty_input_\${rowId}\`);
+            const newQty = parseInt(inputField.value);
+            if (isNaN(newQty) || newQty < 0) { alert("Qty harus angka valid!"); return; }
+
+            fetch('/api/update-qty', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: rowId, qty: newQty })
+            })
+            .then(res => res.json())
+            .then(d => { if(d.status === 'success') { alert("✅ Koreksi berhasil!"); fetchLiveRecords(); } })
+            .catch(err => alert("Koneksi gagal!"));
+        }
+
+        document.getElementById('uploadMasterForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('file', document.getElementById('masterFile').files[0]);
+            document.getElementById('uploadStatus').innerHTML = "Memproses...";
+            fetch('/api/upload-master', { method: 'POST', body: formData })
+            .then(res => res.json())
+            .then(d => { document.getElementById('uploadStatus').innerHTML = d.status === 'success' ? "<span class='text-success'>✅ Sukses!</span>" : "<span class='text-danger'>❌ Gagal</span>"; });
+        });
+
+        fetchLiveRecords();
+    </script>
+</body>
+</html>
+    '''
+
+# ==================== API BACKEND ENDPOINTS ====================
 
 @app.route('/api/products', methods=['GET'])
 def get_live_products():
@@ -58,7 +231,6 @@ def get_live_products():
 def process_scan():
     global scan_id_counter, df_master
     
-    # Reload berkala jika berjalan di environment serverless stateless
     if df_master.empty:
         df_master = load_master_data()
 
@@ -77,14 +249,14 @@ def process_scan():
         return jsonify({'status': 'error', 'message': '⚠️ SILAKAN SCAN QR CODE RAK TERLEBIH DAHULU!'}), 400
 
     if df_master.empty:
-        return jsonify({'status': 'error', 'message': '❌ File master_produk.xlsx kosong atau tidak terbaca di server!'}), 500
+        return jsonify({'status': 'error', 'message': '❌ File master_produk.xlsx tidak terbaca atau kosong!'}), 500
 
     product = df_master[df_master['barcode'] == barcode_input]
 
     if not product.empty:
         prod_data = product.iloc[0]
         
-        # JALUR CHECKING (Selesai Scan Barcode, sebelum isi Qty)
+        # JALUR 1: Hanya Verifikasi Cek Barcode (sebelum input Qty manual)
         if data.get('check_only') is True:
             return jsonify({
                 'status': 'success',
@@ -93,7 +265,7 @@ def process_scan():
                 'message': 'Produk terdaftar'
             }), 200
 
-        # JALUR SIMPAN DATA FIX
+        # JALUR 2: Simpan Data Final ke RAM
         existing_item = next((item for item in scan_results if item['barcode'] == barcode_input 
                               and item['petugas'] == petugas 
                               and item['zona'] == zona 
@@ -126,7 +298,7 @@ def process_scan():
             'qty': current_qty
         }), 200
     else:
-        return jsonify({'status': 'error', 'message': f'Barcode [{barcode_input}] TIDAK TERDAFTAR di Master Excel!'}), 400
+        return jsonify({'status': 'error', 'message': f'Barcode [{barcode_input}] TIDAK TERDAFTAR!'}), 400
 
 @app.route('/api/update-qty', methods=['POST'])
 def update_qty_manual():
@@ -135,19 +307,19 @@ def update_qty_manual():
         row_id = int(data.get('id'))
         new_qty = int(data.get('qty', 0))
     except (ValueError, TypeError):
-        return jsonify({'status': 'error', 'message': 'Data ID atau Qty tidak valid!'}), 400
+        return jsonify({'status': 'error', 'message': 'Input tidak valid!'}), 400
     
     for item in scan_results:
         if item['id'] == row_id:
             item['qty'] = new_qty
-            return jsonify({'status': 'success', 'message': 'Kuantitas berhasil diperbarui!'})
+            return jsonify({'status': 'success', 'message': 'Kuantitas diperbarui!'})
     return jsonify({'status': 'error', 'message': 'Data tidak ditemukan!'}), 404
 
 @app.route('/api/upload-master', methods=['POST'])
 def upload_master():
     global df_master
     if 'file' not in request.files:
-        return jsonify({'status': 'error', 'message': 'Tidak ada file diunggah!'}), 400
+        return jsonify({'status': 'error', 'message': 'Tidak ada file!'}), 400
     file = request.files['file']
     if file.filename == '':
         return jsonify({'status': 'error', 'message': 'Nama file kosong!'}), 400
@@ -155,9 +327,9 @@ def upload_master():
     try:
         file.save(MASTER_FILE)
         df_master = load_master_data()
-        return jsonify({'status': 'success', 'message': 'Master Excel Sukses Diperbarui!'})
+        return jsonify({'status': 'success', 'message': 'Master Excel Diperbarui!'})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Gagal membaca file: {str(e)}'}), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/download', methods=['GET'])
 def download_excel():
@@ -169,10 +341,6 @@ def download_excel():
     
     df_export.to_excel(OUTPUT_FILE, index=False)
     return send_file(OUTPUT_FILE, as_attachment=True)
-
-# Handler khusus Vercel Serverless WSGI
-def handler(environ, start_response):
-    return app(environ, start_response)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
