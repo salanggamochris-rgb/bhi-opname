@@ -21,22 +21,17 @@
                 <input type="text" class="form-control form-control-lg" id="petugas" name="petugas" placeholder="Contoh: Chris" required>
             </div>
 
-            <div class="mb-3">
+            <div class="mb-4">
                 <label for="zona" class="form-label fw-bold">Pilih Zona Kerja</label>
                 <select class="form-select form-control-lg" id="zona" name="zona" required>
-                    <option value="" disabled selected>-- Pilih Zona (Sesuai Input Super User) --</option>
+                    <option value="" disabled selected>-- Pilih Zona --</option>
                     {% for zona in master_zona %}
                     <option value="{{ zona }}">{{ zona }}</option>
                     {% endfor %}
                 </select>
             </div>
 
-            <div class="mb-4">
-                <label for="sublokasi" class="form-label fw-bold">Sublokasi / Rak</label>
-                <input type="text" class="form-control form-control-lg" id="sublokasi" name="sublokasi" placeholder="Contoh: AD-3" required style="text-transform: uppercase;">
-            </div>
-
-            <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">Mulai Scan</button>
+            <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">Masuk ke Scanner</button>
         </form>
     </div>
 </body>
