@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan Opname BHI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { max-width: 500px; margin: 0 auto; }
+        .card-info { border-left: 5px solid #0d6efd; }
+    </style>
+</head>
+<body class="bg-light p-3">
+    <div class="container bg-white p-3 rounded shadow">
+        <h4 class="text-center text-primary mb-3">BHI Stock Opname</h4>
+        
+        <div class="alert alert-primary p-2 text-center card-info mb-4">
+            <small class="d-block text-muted">Petugas & Area Kerja:</small>
+            <strong>{{ username }}</strong> | <span class="badge bg-primary">{{ zona }}</span>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label fw-bold">1. Scan QR Sublokasi</label>
+            <input type="text" id="sublokasi" class="form-control form-control-lg text-uppercase" placeholder="Contoh: PICK-A-01" onchange="lockSublokasi()">
+            <div class="form-text text-danger" id="sub-hint">Silakan scan/isi sublokasi untuk membuka kolom barcode.</div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label fw-bold">2. Scan Barcode Produk</label>
+            <input type="text" id="barcode" class="form-control form-control-lg" placeholder="Tembak barcode di sini..." disabled onchange="cariBarcode()">
+        </div>
+
+        <div id="info-produk" class="p-3 mb-3 bg-light rounded border d-none">
+            <span class="badge bg-success mb-2" id="prod-brand">BRAND</span>
+            <h5 class="text-dark fw-bold mb-1" id="prod-name">Nama Produk</h5>
+            <div class="row text-muted mt-2 small">
+                <div class="col-6"><strong>SKU:</strong> <span id="prod-sku">-</span></div>
+                <div class="col-6"><strong>Varian:</strong> <span id="prod-variant">-</span></div>
+            </div>
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label fw-bold">3. Masukkan Qty Fisik</label>
+            <input type="number" id="qty" class="form-control form-control-lg text-center" value="1" min="1" disabled onkeydown="if(event.key==='Enter') simpanData()">
+        </div>
+
+        <button type="button" class="btn btn-success btn-lg w-100 py-3 fw-bold" id="btn-simpan" disabled onclick="simpanData()">SIMPAN DATA SCAN</button>
+        
+        <div class="text-center mt-3">
+            <a href="/" class="btn btn-sm btn-link text-secondary">← Ganti User / Zona</a>
+        </div>
+    </div>
+
+    <script>
+        let dataProdukSelesaiCari = null;
+
+        // Fungsi Kunci Sublokasi
+        if(document.getElementById('sublokasi')) {
+            document.getElementById('sublokasi').focus();
+        }
+
+        function lockSublokasi() {
+            let val = document.getElementById('sublokasi').value;
+            if(val.trim() !== "") {
+                document.getElementById('sublokasi').disabled = true;
+                document.getElementById('sub-hint').className = "form-text text-success";
+                document.getElementById('sub-hint').innerText = "Sublokasi terkunci. Untuk mengganti, refresh halaman.";
+                document.getElementById('barcode').disabled = false;
+                document.getElementById('barcode').focus();
+            }
+        }
+
+        // Fungsi Ambil Data Barcode dari Master Excel
+        function cariBarcode() {
+            let barcodeVal = document.getElementById('barcode').value.trim();
+            if(!barcodeVal) return;
+            
+            fetch('/api/cek_barcode', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ barcode: barcodeVal })
+            })
+            .then(res => res.json())
+            .then(res => {
+                if(res.status === "success") {
+                    dataProdukSelesaiCari = res.data;
+                    document.getElementById('prod-name').innerText = res.data.name;
+                    document.getElementById('prod-sku').innerText = res.data.sku;
+                    document.getElementById('prod-brand').innerText = res.data.brand.toUpperCase();
+                    document.getElementById('prod-variant').innerText = res.data.variant;
+                    document.getElementById('info-produk').classList.remove('d-none');
+                    
+                    document.getElementById('qty').disabled = false;
+                    document.getElementById('btn-simpan').disabled = false;
+                    document.getElementById('qty').focus();
+                    document.getElementById('qty').select();
+                } else {
+                    alert(res.message);
+                    document.getElementById('barcode').value = "";
+                    document.getElementById('barcode').focus();
+                }
+            });
+        }
+
+        // Fungsi Kirim ke Database app.py
+        function simpanData() {
+            let sublokasi = document.getElementById('sublokasi').value;
+            let barcode = document.getElementById('barcode').value;
+            let qty = document.getElementById('qty').value;
+
+            if(!qty || qty < 1) {
+                alert("Qty fisik tidak boleh kosong atau kurang dari 1!");
+                return;
+            }
+
+            fetch('/api/simpan_opname', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: "{{ username }}",
+                    zona: "{{ zona }}",
+                    sublokasi: sublokasi,
+                    barcode: barcode,
+                    sku: dataProdukSelesaiCari.sku,
+                    brand: dataProdukSelesaiCari.brand,
+                    product_name: dataProdukSelesaiCari.name,
+                    variant: dataProdukSelesaiCari.variant,
+                    qty: qty
+                })
+            })
+            .then(res => res.json())
+            .then(res => {
+                // Reset form barcode & qty agar siap tembak barang berikutnya
+                document.getElementById('barcode').value = "";
+                document.getElementById('qty').value = "1";
+                document.getElementById('qty').disabled = true;
+                document.getElementById('btn-simpan').disabled = true;
+                document.getElementById('info-produk').classList.add('d-none');
+                document.getElementById('barcode').focus();
+            });
+        }
+    </script>
+</body>
+</html>
