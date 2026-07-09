@@ -38,10 +38,14 @@ def scan_page():
     zona = request.args.get('zona', '-')
     return render_template('scan.html', petugas=petugas, zona=zona)
 
+
+# JALUR PADAT AMAN: Kita daftarkan kedua alamat alternatif ini agar tidak memicu 404 lagi!
 @app.route('/super-user')
+@app.route('/superuser')
 def super_user_page():
     # Halaman monitoring live dashboard monitoring
     return render_template('super_user.html')
+
 
 # ==================== API ENDPOINTS ====================
 
