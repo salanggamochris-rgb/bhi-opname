@@ -9,27 +9,10 @@
         body { background-color: #f4f6f9; }
         .info-header { background: #0d6efd; color: white; border-radius: 0 0 15px 15px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .scan-box { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        /* STYLE KHUSUS KOTAK HISTORY YANG BISA DI-SCROLL */
-        .history-container { 
-            background: white; 
-            border-radius: 12px; 
-            padding: 15px; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
-            max-height: 280px; 
-            overflow-y: auto; 
-        }
-        .history-item { 
-            border-left: 5px solid #198754; 
-            background: #f8f9fa; 
-            margin-bottom: 8px; 
-            padding: 10px; 
-            border-radius: 4px; 
-            animation: fadeIn 0.3s ease-in-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        .history-container { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-height: 280px; overflow-y: auto; }
+        .history-item { border-left: 5px solid #198754; background: #f8f9fa; margin-bottom: 8px; padding: 10px; border-radius: 4px; animation: fadeIn 0.3s ease-in-out; }
+        .history-item.rak-change { border-left: 5px solid #0d6efd; background: #e7f1ff; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
@@ -38,35 +21,35 @@
         <div class="info-header text-center">
             <h5 class="mb-1 fw-bold">Stock Opname BHI</h5>
             <div class="small">
-                👤 <strong>{{ petugas }}</strong> | 📍 Zona: <span class="badge bg-warning text-dark fw-bold">{{ zona }}</span> | 📦 Rak: <strong>{{ sublokasi }}</strong>
+                👤 <strong>{{ petugas }}</strong> | 📍 Zona: <span class="badge bg-warning text-dark fw-bold">{{ zona }}</span> | 📦 Rak Aktif: <span id="currentRakBadge" class="badge bg-danger fs-6 fw-bold">- BELUM SCAN RAK -</span>
             </div>
         </div>
     </div>
 
     <div class="container">
         <div class="scan-box mb-4">
-            <h6 class="fw-bold text-secondary mb-3">Silakan Taruh Kursor & Tembak Barcode:</h6>
+            <div class="alert alert-info py-2 text-center small mb-3">
+                💡 <strong>Tips Cara Scan:</strong> Tembak QR Code Rak dulu, baru tembak barcode barang-barangnya.
+            </div>
             <div class="input-group input-group-lg mb-2">
                 <span class="input-group-text">🔍</span>
-                <input type="text" id="barcodeInput" class="form-control" placeholder="Scan Barcode di Sini..." autofocus autocomplete="off">
+                <input type="text" id="barcodeInput" class="form-control" placeholder="Scan QR Rak / Barcode Barang..." autofocus autocomplete="off">
             </div>
             <div id="statusMessage" class="mt-2 fw-bold text-center"></div>
         </div>
 
         <div class="mb-2 d-flex justify-content-between align-items-center">
-            <h6 class="fw-bold text-dark mb-0">📋 Riwayat Scan Anda (Paling Baru di Atas):</h6>
+            <h6 class="fw-bold text-dark mb-0">📋 Riwayat Aktivitas Anda:</h6>
             <span id="totalScanUser" class="badge bg-secondary">Total: 0 item</span>
         </div>
         
         <div class="history-container">
-            <div id="emptyHistory" class="text-center text-muted py-4 small">
-                Belum ada item yang di-scan pada sesi ini.
-            </div>
+            <div id="emptyHistory" class="text-center text-muted py-4 small">Belum ada aktivitas scan pada sesi ini.</div>
             <div id="historyList"></div>
         </div>
 
         <div class="text-center mt-4 mb-5">
-            <a href="/" class="btn btn-sm btn-outline-danger w-50" onclick="return confirm('Selesai scan? Anda akan keluar dari sesi lokasimu saat ini.');">Ganti Sesi Lokasi</a>
+            <a href="/" class="btn btn-sm btn-outline-danger w-50">Keluar / Ganti Sesi</a>
         </div>
     </div>
 
@@ -76,26 +59,42 @@
         const historyList = document.getElementById('historyList');
         const emptyHistory = document.getElementById('emptyHistory');
         const totalScanUser = document.getElementById('totalScanUser');
+        const currentRakBadge = document.getElementById('currentRakBadge');
         
+        let currentSublokasi = "-";
         let counterTotalItem = 0;
 
-        // Jaga agar inputan selalu fokus otomatis (petugas tinggal tembak terus tanpa klik layar)
-        document.addEventListener('click', () => {
-            barcodeInput.focus();
-        });
+        document.addEventListener('click', () => { barcodeInput.focus(); });
 
-        // Deteksi tombol Enter (efek setelah barcode di-scan/ditembak)
         barcodeInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
-                const barcodeValue = barcodeInput.value.trim();
-                if (barcodeValue !== '') {
-                    sendDataToBackend(barcodeValue);
+                const inputValue = barcodeInput.value.trim().toUpperCase();
+                if (inputValue !== '') {
+                    // ATURAN ATURAN LOGIK DETEKSI QR CODE RAK
+                    if (isRakCode(inputValue)) {
+                        // Jika yang di-scan adalah kode RAK
+                        currentSublokasi = inputValue;
+                        currentRakBadge.innerText = currentSublokasi;
+                        currentRakBadge.className = "badge bg-success fs-6 fw-bold";
+                        statusMessage.innerHTML = `<span class='text-primary'>📍 RAK BERHASIL DISET KE: ${currentSublokasi}</span>`;
+                        
+                        emptyHistory.style.display = 'none';
+                        addRakToHistoryList(currentSublokasi);
+                    } else {
+                        // Jika yang di-scan adalah BARCODE BARANG
+                        sendDataToBackend(inputValue);
+                    }
                 }
-                barcodeInput.value = ''; // Kosongkan kotak input untuk scan berikutnya
+                barcodeInput.value = '';
             }
         });
 
-        // Fungsi menembak API Flask ke Backend app.py
+        // FUNGSI LOGIKA VALIDASI: Mana kode rak, mana kode barang?
+        function isRakCode(value) {
+            // Mengembalikan true jika teks mengandung kata RAK, AD, BC, atau panjang karakter kurang dari 8 (Format kode rak lokasimu)
+            return value.includes("RAK") || value.includes("AD") || value.includes("BC") || value.length < 8;
+        }
+
         function sendDataToBackend(barcode) {
             statusMessage.innerHTML = "<span class='text-muted'>Memproses...</span>";
             
@@ -106,58 +105,51 @@
                     barcode: barcode,
                     petugas: "{{ petugas }}",
                     zona: "{{ zona }}",
-                    sublokasi: "{{ sublokasi }}"
+                    sublokasi: currentSublokasi
                 })
             })
             .then(response => response.json().then(data => ({ status: response.status, body: data })))
             .then(res => {
                 if (res.status === 200) {
-                    // 1. Tampilkan Notifikasi Sukses Singkat di Atas Form
-                    statusMessage.innerHTML = `<span class='text-success'>✅ ${res.body.nama_produk} (Qty saat ini: ${res.body.qty})</span>`;
-                    
-                    // 2. Hilangkan teks "Belum ada item"
+                    statusMessage.innerHTML = `<span class='text-success'>✅ ${res.body.nama_produk} (Qty di rak ini: ${res.body.qty})</span>`;
                     emptyHistory.style.display = 'none';
-                    
-                    // 3. Tambahkan Item ke List Paling Atas (prepend)
-                    addtoHistoryList(barcode, res.body.nama_produk, res.body.variant, res.body.qty);
-                    
-                    // 4. Update Badge Total Item yang Berhasil Di-scan oleh Petugas ini
+                    addtoHistoryList(barcode, res.body.nama_produk, res.body.variant, res.body.qty, currentSublokasi);
                     counterTotalItem++;
                     totalScanUser.innerText = `Total: ${counterTotalItem} item`;
                 } else {
-                    // Tampilkan pesan error jika barcode tidak terdaftar di Excel
                     statusMessage.innerHTML = `<span class='text-danger'>❌ ${res.body.message}</span>`;
-                    // Bunyikan alert suara bawaan hp jika gagal (opsional)
-                    if (window.navigator.vibrate) window.navigator.vibrate(200);
                 }
             })
             .catch(err => {
-                statusMessage.innerHTML = "<span class='text-danger'>❌ Gagal terhubung ke Server! Periksa sinyal Wi-Fi/Kuota.</span>";
+                statusMessage.innerHTML = "<span class='text-danger'>❌ Gagal terhubung ke Server!</span>";
             });
         }
 
-        // Fungsi mencetak struk riwayat tumpukan di bawah secara real-time
-        function addtoHistoryList(barcode, namaProduk, variant, currentQty) {
-            // Buat element penampung item baru
+        function addtoHistoryList(barcode, namaProduk, variant, currentQty, rak) {
             const newItem = document.createElement('div');
             newItem.className = 'history-item d-flex justify-content-between align-items-center';
-            
-            // Dapatkan waktu scan saat ini (Jam:Menit:Detik)
             const now = new Date();
             const timeString = now.toTimeString().split(' ')[0];
 
             newItem.innerHTML = `
                 <div style="max-width: 80%;">
                     <div class="fw-bold text-dark small" style="line-height: 1.2;">${namaProduk}</div>
-                    <div class="text-muted" style="font-size: 11px;">Varian: ${variant} | Barcode: ${barcode}</div>
+                    <div class="text-muted" style="font-size: 11px;">Rak: <strong>${rak}</strong> | Varian: ${variant}</div>
                 </div>
                 <div class="text-end">
                     <span class="badge bg-success fs-6">Qty: ${currentQty}</span>
                     <div class="text-muted" style="font-size: 9px; margin-top: 2px;">🕒 ${timeString}</div>
                 </div>
             `;
+            historyList.insertBefore(newItem, historyList.firstChild);
+        }
 
-            // PREPEND: Fitur sakti agar item baru selalu masuk di urutan TERATAS TUMPUKAN
+        function addRakToHistoryList(rakName) {
+            const newItem = document.createElement('div');
+            newItem.className = 'history-item rak-change text-center fw-bold text-primary small py-1';
+            const now = new Date();
+            const timeString = now.toTimeString().split(' ')[0];
+            newItem.innerHTML = `🚚 PINDAH RAK KE: ${rakName} <span class="text-muted fw-normal" style="font-size: 10px;">(${timeString})</span>`;
             historyList.insertBefore(newItem, historyList.firstChild);
         }
     </script>
