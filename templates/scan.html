@@ -1,143 +1,164 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scan Opname BHI</title>
+    <title>Halaman Scan - Warehouse BHI</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { max-width: 500px; margin: 0 auto; }
-        .card-info { border-left: 5px solid #0d6efd; }
+        body { background-color: #f4f6f9; }
+        .info-header { background: #0d6efd; color: white; border-radius: 0 0 15px 15px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .scan-box { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        /* STYLE KHUSUS KOTAK HISTORY YANG BISA DI-SCROLL */
+        .history-container { 
+            background: white; 
+            border-radius: 12px; 
+            padding: 15px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
+            max-height: 280px; 
+            overflow-y: auto; 
+        }
+        .history-item { 
+            border-left: 5px solid #198754; 
+            background: #f8f9fa; 
+            margin-bottom: 8px; 
+            padding: 10px; 
+            border-radius: 4px; 
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
-<body class="bg-light p-3">
-    <div class="container bg-white p-3 rounded shadow">
-        <h4 class="text-center text-primary mb-3">BHI Stock Opname</h4>
-        
-        <div class="alert alert-primary p-2 text-center card-info mb-4">
-            <small class="d-block text-muted">Petugas & Area Kerja:</small>
-            <strong>{{ username }}</strong> | <span class="badge bg-primary">{{ zona }}</span>
-        </div>
+<body>
 
-        <div class="mb-3">
-            <label class="form-label fw-bold">1. Scan QR Sublokasi</label>
-            <input type="text" id="sublokasi" class="form-control form-control-lg text-uppercase" placeholder="Contoh: PICK-A-01" onchange="lockSublokasi()">
-            <div class="form-text text-danger" id="sub-hint">Silakan scan/isi sublokasi untuk membuka kolom barcode.</div>
-        </div>
-
-        <div class="mb-3">
-            <label class="form-label fw-bold">2. Scan Barcode Produk</label>
-            <input type="text" id="barcode" class="form-control form-control-lg" placeholder="Tembak barcode di sini..." disabled onchange="cariBarcode()">
-        </div>
-
-        <div id="info-produk" class="p-3 mb-3 bg-light rounded border d-none">
-            <span class="badge bg-success mb-2" id="prod-brand">BRAND</span>
-            <h5 class="text-dark fw-bold mb-1" id="prod-name">Nama Produk</h5>
-            <div class="row text-muted mt-2 small">
-                <div class="col-6"><strong>SKU:</strong> <span id="prod-sku">-</span></div>
-                <div class="col-6"><strong>Varian:</strong> <span id="prod-variant">-</span></div>
+    <div class="container mb-4">
+        <div class="info-header text-center">
+            <h5 class="mb-1 fw-bold">Stock Opname BHI</h5>
+            <div class="small">
+                👤 <strong>{{ petugas }}</strong> | 📍 Zona: <span class="badge bg-warning text-dark fw-bold">{{ zona }}</span> | 📦 Rak: <strong>{{ sublokasi }}</strong>
             </div>
         </div>
+    </div>
 
-        <div class="mb-4">
-            <label class="form-label fw-bold">3. Masukkan Qty Fisik</label>
-            <input type="number" id="qty" class="form-control form-control-lg text-center" value="1" min="1" disabled onkeydown="if(event.key==='Enter') simpanData()">
+    <div class="container">
+        <div class="scan-box mb-4">
+            <h6 class="fw-bold text-secondary mb-3">Silakan Taruh Kursor & Tembak Barcode:</h6>
+            <div class="input-group input-group-lg mb-2">
+                <span class="input-group-text">🔍</span>
+                <input type="text" id="barcodeInput" class="form-control" placeholder="Scan Barcode di Sini..." autofocus autocomplete="off">
+            </div>
+            <div id="statusMessage" class="mt-2 fw-bold text-center"></div>
         </div>
 
-        <button type="button" class="btn btn-success btn-lg w-100 py-3 fw-bold" id="btn-simpan" disabled onclick="simpanData()">SIMPAN DATA SCAN</button>
+        <div class="mb-2 d-flex justify-content-between align-items-center">
+            <h6 class="fw-bold text-dark mb-0">📋 Riwayat Scan Anda (Paling Baru di Atas):</h6>
+            <span id="totalScanUser" class="badge bg-secondary">Total: 0 item</span>
+        </div>
         
-        <div class="text-center mt-3">
-            <a href="/" class="btn btn-sm btn-link text-secondary">← Ganti User / Zona</a>
+        <div class="history-container">
+            <div id="emptyHistory" class="text-center text-muted py-4 small">
+                Belum ada item yang di-scan pada sesi ini.
+            </div>
+            <div id="historyList"></div>
+        </div>
+
+        <div class="text-center mt-4 mb-5">
+            <a href="/" class="btn btn-sm btn-outline-danger w-50" onclick="return confirm('Selesai scan? Anda akan keluar dari sesi lokasimu saat ini.');">Ganti Sesi Lokasi</a>
         </div>
     </div>
 
     <script>
-        let dataProdukSelesaiCari = null;
+        const barcodeInput = document.getElementById('barcodeInput');
+        const statusMessage = document.getElementById('statusMessage');
+        const historyList = document.getElementById('historyList');
+        const emptyHistory = document.getElementById('emptyHistory');
+        const totalScanUser = document.getElementById('totalScanUser');
+        
+        let counterTotalItem = 0;
 
-        // Fungsi Kunci Sublokasi
-        if(document.getElementById('sublokasi')) {
-            document.getElementById('sublokasi').focus();
-        }
+        // Jaga agar inputan selalu fokus otomatis (petugas tinggal tembak terus tanpa klik layar)
+        document.addEventListener('click', () => {
+            barcodeInput.focus();
+        });
 
-        function lockSublokasi() {
-            let val = document.getElementById('sublokasi').value;
-            if(val.trim() !== "") {
-                document.getElementById('sublokasi').disabled = true;
-                document.getElementById('sub-hint').className = "form-text text-success";
-                document.getElementById('sub-hint').innerText = "Sublokasi terkunci. Untuk mengganti, refresh halaman.";
-                document.getElementById('barcode').disabled = false;
-                document.getElementById('barcode').focus();
-            }
-        }
-
-        // Fungsi Ambil Data Barcode dari Master Excel
-        function cariBarcode() {
-            let barcodeVal = document.getElementById('barcode').value.trim();
-            if(!barcodeVal) return;
-            
-            fetch('/api/cek_barcode', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ barcode: barcodeVal })
-            })
-            .then(res => res.json())
-            .then(res => {
-                if(res.status === "success") {
-                    dataProdukSelesaiCari = res.data;
-                    document.getElementById('prod-name').innerText = res.data.name;
-                    document.getElementById('prod-sku').innerText = res.data.sku;
-                    document.getElementById('prod-brand').innerText = res.data.brand.toUpperCase();
-                    document.getElementById('prod-variant').innerText = res.data.variant;
-                    document.getElementById('info-produk').classList.remove('d-none');
-                    
-                    document.getElementById('qty').disabled = false;
-                    document.getElementById('btn-simpan').disabled = false;
-                    document.getElementById('qty').focus();
-                    document.getElementById('qty').select();
-                } else {
-                    alert(res.message);
-                    document.getElementById('barcode').value = "";
-                    document.getElementById('barcode').focus();
+        // Deteksi tombol Enter (efek setelah barcode di-scan/ditembak)
+        barcodeInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const barcodeValue = barcodeInput.value.trim();
+                if (barcodeValue !== '') {
+                    sendDataToBackend(barcodeValue);
                 }
-            });
-        }
-
-        // Fungsi Kirim ke Database app.py
-        function simpanData() {
-            let sublokasi = document.getElementById('sublokasi').value;
-            let barcode = document.getElementById('barcode').value;
-            let qty = document.getElementById('qty').value;
-
-            if(!qty || qty < 1) {
-                alert("Qty fisik tidak boleh kosong atau kurang dari 1!");
-                return;
+                barcodeInput.value = ''; // Kosongkan kotak input untuk scan berikutnya
             }
+        });
 
-            fetch('/api/simpan_opname', {
+        // Fungsi menembak API Flask ke Backend app.py
+        function sendDataToBackend(barcode) {
+            statusMessage.innerHTML = "<span class='text-muted'>Memproses...</span>";
+            
+            fetch('/api/scan', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    username: "{{ username }}",
-                    zona: "{{ zona }}",
-                    sublokasi: sublokasi,
                     barcode: barcode,
-                    sku: dataProdukSelesaiCari.sku,
-                    brand: dataProdukSelesaiCari.brand,
-                    product_name: dataProdukSelesaiCari.name,
-                    variant: dataProdukSelesaiCari.variant,
-                    qty: qty
+                    petugas: "{{ petugas }}",
+                    zona: "{{ zona }}",
+                    sublokasi: "{{ sublokasi }}"
                 })
             })
-            .then(res => res.json())
+            .then(response => response.json().then(data => ({ status: response.status, body: data })))
             .then(res => {
-                // Reset form barcode & qty agar siap tembak barang berikutnya
-                document.getElementById('barcode').value = "";
-                document.getElementById('qty').value = "1";
-                document.getElementById('qty').disabled = true;
-                document.getElementById('btn-simpan').disabled = true;
-                document.getElementById('info-produk').classList.add('d-none');
-                document.getElementById('barcode').focus();
+                if (res.status === 200) {
+                    // 1. Tampilkan Notifikasi Sukses Singkat di Atas Form
+                    statusMessage.innerHTML = `<span class='text-success'>✅ ${res.body.nama_produk} (Qty saat ini: ${res.body.qty})</span>`;
+                    
+                    // 2. Hilangkan teks "Belum ada item"
+                    emptyHistory.style.display = 'none';
+                    
+                    // 3. Tambahkan Item ke List Paling Atas (prepend)
+                    addtoHistoryList(barcode, res.body.nama_produk, res.body.variant, res.body.qty);
+                    
+                    // 4. Update Badge Total Item yang Berhasil Di-scan oleh Petugas ini
+                    counterTotalItem++;
+                    totalScanUser.innerText = `Total: ${counterTotalItem} item`;
+                } else {
+                    // Tampilkan pesan error jika barcode tidak terdaftar di Excel
+                    statusMessage.innerHTML = `<span class='text-danger'>❌ ${res.body.message}</span>`;
+                    // Bunyikan alert suara bawaan hp jika gagal (opsional)
+                    if (window.navigator.vibrate) window.navigator.vibrate(200);
+                }
+            })
+            .catch(err => {
+                statusMessage.innerHTML = "<span class='text-danger'>❌ Gagal terhubung ke Server! Periksa sinyal Wi-Fi/Kuota.</span>";
             });
+        }
+
+        // Fungsi mencetak struk riwayat tumpukan di bawah secara real-time
+        function addtoHistoryList(barcode, namaProduk, variant, currentQty) {
+            // Buat element penampung item baru
+            const newItem = document.createElement('div');
+            newItem.className = 'history-item d-flex justify-content-between align-items-center';
+            
+            // Dapatkan waktu scan saat ini (Jam:Menit:Detik)
+            const now = new Date();
+            const timeString = now.toTimeString().split(' ')[0];
+
+            newItem.innerHTML = `
+                <div style="max-width: 80%;">
+                    <div class="fw-bold text-dark small" style="line-height: 1.2;">${namaProduk}</div>
+                    <div class="text-muted" style="font-size: 11px;">Varian: ${variant} | Barcode: ${barcode}</div>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-success fs-6">Qty: ${currentQty}</span>
+                    <div class="text-muted" style="font-size: 9px; margin-top: 2px;">🕒 ${timeString}</div>
+                </div>
+            `;
+
+            // PREPEND: Fitur sakti agar item baru selalu masuk di urutan TERATAS TUMPUKAN
+            historyList.insertBefore(newItem, historyList.firstChild);
         }
     </script>
 </body>
