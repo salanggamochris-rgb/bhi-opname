@@ -13,15 +13,12 @@ if os.path.exists(EXCEL_FILE):
 else:
     df_master = pd.DataFrame(columns=['barcode', 'sku', 'brand', 'product_name', 'variant'])
 
-# Data Penyimpanan Utama (Di Memori Server)
 scan_results = []
 scan_id_counter = 1
-# Default Zona Awal (Bisa ditambah/dihapus oleh Super User lewat Web)
 master_zona = ["PICKFACE", "BULK", "RESERVE", "SHIPPING"]
 
 @app.route('/')
 def login():
-    # Mengirim daftar master_zona ke halaman login user
     return render_template('login.html', master_zona=master_zona)
 
 @app.route('/scan', methods=['GET', 'POST'])
@@ -29,8 +26,8 @@ def scan_page():
     if request.method == 'POST':
         petugas = request.form.get('petugas')
         zona = request.form.get('zona')
-        sublokasi = request.form.get('sublokasi')
-        return render_template('scan.html', petugas=petugas, zona=zona, sublokasi=sublokasi)
+        # Sublokasi dihapus dari login, dimulai dari kosong ('-')
+        return render_template('scan.html', petugas=petugas, zona=zona)
     return redirect(url_for('login'))
 
 @app.route('/api/scan', methods=['POST'])
@@ -40,7 +37,11 @@ def process_scan():
     barcode_input = str(data.get('barcode', '')).strip()
     petugas = data.get('petugas')
     zona = data.get('zona')
-    sublokasi = data.get('sublokasi')
+    sublokasi = data.get('sublokasi', '-').strip().upper()
+
+    # Validasi jika user belum scan rak sama sekali
+    if not sublokasi or sublokasi == '-':
+        return {'status': 'error', 'message': '⚠️ SILAKAN SCAN QR CODE RAK TERLEBIH DAHULU!'}, 400
 
     product = df_master[df_master['barcode'] == barcode_input]
 
@@ -73,28 +74,23 @@ def process_scan():
 
         return {
             'status': 'success',
+            'type': 'barang',
             'nama_produk': prod_data['product_name'],
             'variant': prod_data['variant'],
             'qty': current_qty
         }, 200
     else:
-        return {'status': 'error', 'message': 'Barcode TIDAK TERDAFTAR di Master Produk!'}, 400
+        return {'status': 'error', 'message': f'Barcode [{barcode_input}] TIDAK TERDAFTAR di Master Excel!'}, 400
 
 @app.route('/superuser')
 def superuser_dashboard():
     selected_zona = request.args.get('filter_zona', '')
-    
     if selected_zona:
         filtered_results = [item for item in scan_results if str(item.get('zona')) == selected_zona]
     else:
         filtered_results = scan_results
-        
-    return render_template('admin.html', 
-                           results=filtered_results, 
-                           master_zona=master_zona, 
-                           selected_zona=selected_zona)
+    return render_template('admin.html', results=filtered_results, master_zona=master_zona, selected_zona=selected_zona)
 
-# Route untuk Menambah Zona Baru dari Web
 @app.route('/superuser/add_zona', methods=['POST'])
 def add_zona():
     new_zona_name = request.form.get('new_zona', '').strip().upper()
@@ -102,7 +98,6 @@ def add_zona():
         master_zona.append(new_zona_name)
     return redirect(url_for('superuser_dashboard'))
 
-# Route untuk Menghapus Zona dari Web
 @app.route('/superuser/delete_zona/<string:zona_name>', methods=['POST'])
 def delete_zona(zona_name):
     if zona_name in master_zona:
