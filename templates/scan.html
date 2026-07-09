@@ -8,12 +8,9 @@
     <style>
         body { background-color: #f4f6f9; }
         .info-header { background: #0d6efd; color: white; border-radius: 0 0 15px 15px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        .scan-box { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: background-color 0.3s ease; }
-        /* Style visual penanda jika sedang dalam mode scan RAK */
-        .scan-box.mode-rak-aktif { background-color: #e7f1ff; border: 2px dashed #0d6efd; }
-        .history-container { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-height: 280px; overflow-y: auto; }
+        .scan-box { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .history-container { background: white; border-radius: 12px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-height: 250px; overflow-y: auto; }
         .history-item { border-left: 5px solid #198754; background: #f8f9fa; margin-bottom: 8px; padding: 10px; border-radius: 4px; animation: fadeIn 0.3s ease-in-out; }
-        .history-item.rak-change { border-left: 5px solid #0d6efd; background: #e7f1ff; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
@@ -23,36 +20,35 @@
         <div class="info-header text-center">
             <h5 class="mb-1 fw-bold">Stock Opname BHI</h5>
             <div class="small">
-                👤 <strong>{{ petugas }}</strong> | 📍 Zona: <span class="badge bg-warning text-dark fw-bold">{{ zona }}</span> | 📦 Rak Aktif: <span id="currentRakBadge" class="badge bg-danger fs-6 fw-bold">- BELUM SCAN RAK -</span>
+                👤 <strong>{{ petugas }}</strong> | 📍 Zona: <span class="badge bg-warning text-dark fw-bold">{{ zona }}</span>
             </div>
         </div>
     </div>
 
     <div class="container">
-        <div class="row g-2 mb-3 text-center">
-            <div class="col-6">
-                <button type="button" id="btnModeBarang" class="btn btn-success w-100 fw-bold py-2 shadow-sm">
-                    📦 Mode Scan Barang
-                </button>
+        <div class="scan-box mb-4">
+            <h5 class="fw-bold text-secondary mb-4 text-center">Form Input Opname</h5>
+            
+            <div class="mb-3">
+                <label class="form-label fw-bold text-primary">1. 📍 Scan QR Lokasi / Rak</label>
+                <input type="text" id="inputRak" class="form-control form-control-lg bg-light" placeholder="Tembak QR Kode Rak..." autocomplete="off">
             </div>
-            <div class="col-6">
-                <button type="button" id="btnModeRak" class="btn btn-outline-primary w-100 fw-bold py-2 shadow-sm">
-                    📍 Pindah / Scan Rak
-                </button>
-            </div>
-        </div>
 
-        <div id="scanBox" class="scan-box mb-4">
-            <h6 id="scanLabel" class="fw-bold text-success mb-3">Silakan Tembak BARCODE BARANG:</h6>
-            <div class="input-group input-group-lg mb-2">
-                <span id="scanIcon" class="input-group-text">📦</span>
-                <input type="text" id="barcodeInput" class="form-control" placeholder="Arahkan scanner ke barcode..." autofocus autocomplete="off">
+            <div class="mb-3">
+                <label class="form-label fw-bold text-success">2. 📦 Scan Barcode Produk</label>
+                <input type="text" id="inputBarcode" class="form-control form-control-lg" placeholder="Tembak Barcode Produk..." autocomplete="off">
             </div>
-            <div id="statusMessage" class="mt-2 fw-bold text-center"></div>
+
+            <div class="mb-3">
+                <label class="form-label fw-bold text-danger">3. 🔢 Input Quantity (Manual)</label>
+                <input type="number" id="inputQty" class="form-control form-control-lg" placeholder="Masukkan jumlah fisik..." min="1">
+            </div>
+
+            <div id="statusMessage" class="mt-3 fw-bold text-center fs-6"></div>
         </div>
 
         <div class="mb-2 d-flex justify-content-between align-items-center">
-            <h6 class="fw-bold text-dark mb-0">📋 Riwayat Aktivitas Anda:</h6>
+            <h6 class="fw-bold text-dark mb-0">📋 Riwayat Aktivitas Anda (Terbaru di Atas):</h6>
             <span id="totalScanUser" class="badge bg-secondary">Total: 0 item</span>
         </div>
         
@@ -67,82 +63,74 @@
     </div>
 
     <script>
-        const barcodeInput = document.getElementById('barcodeInput');
+        const inputRak = document.getElementById('inputRak');
+        const inputBarcode = document.getElementById('inputBarcode');
+        const inputQty = document.getElementById('inputQty');
         const statusMessage = document.getElementById('statusMessage');
         const historyList = document.getElementById('historyList');
         const emptyHistory = document.getElementById('emptyHistory');
         const totalScanUser = document.getElementById('totalScanUser');
-        const currentRakBadge = document.getElementById('currentRakBadge');
-        
-        const btnModeBarang = document.getElementById('btnModeBarang');
-        const btnModeRak = document.getElementById('btnModeRak');
-        const scanBox = document.getElementById('scanBox');
-        const scanLabel = document.getElementById('scanLabel');
-        const scanIcon = document.getElementById('scanIcon');
 
-        let currentSublokasi = "-";
         let counterTotalItem = 0;
-        let currentMode = "barang"; // Mode awal otomatis scan barang
 
-        // Selalu paksa focus ke input box scanner
-        document.addEventListener('click', () => { barcodeInput.focus(); });
+        // Saat halaman terbuka, kursor dipaksa stanby langsung di Input Rak
+        window.onload = function() {
+            inputRak.focus();
+        };
 
-        // Handler klik ganti mode secara manual
-        btnModeBarang.addEventListener('click', () => { setMode("barang"); });
-        btnModeRak.addEventListener('click', () => { setMode("rak"); });
-
-        // Fungsi mengubah UI berdasarkan mode aktif
-        function setMode(mode) {
-            currentMode = mode;
-            if (mode === "rak") {
-                btnModeRak.className = "btn btn-primary w-100 fw-bold py-2 shadow-sm";
-                btnModeBarang.className = "btn btn-outline-success w-100 fw-bold py-2 shadow-sm";
-                scanBox.className = "scan-box mb-4 mode-rak-aktif";
-                scanLabel.className = "fw-bold text-primary mb-3";
-                scanLabel.innerText = "📍 SILAKAN TEMBAK QR CODE RAK:";
-                scanIcon.innerText = "📍";
-                barcodeInput.placeholder = "Tembak QR lokasi rak baru...";
+        // Kunci kursor: Jika user tidak sengaja klik area kosong luar, kembalikan kursor ke kotak yang harusnya diisi
+        document.addEventListener('click', () => {
+            if (inputRak.value === '') {
+                inputRak.focus();
+            } else if (inputBarcode.value === '') {
+                inputBarcode.focus();
             } else {
-                btnModeBarang.className = "btn btn-success w-100 fw-bold py-2 shadow-sm";
-                btnModeRak.className = "btn btn-outline-primary w-100 fw-bold py-2 shadow-sm";
-                scanBox.className = "scan-box mb-4";
-                scanLabel.className = "fw-bold text-success mb-3";
-                scanLabel.innerText = "Silakan Tembak BARCODE BARANG:";
-                scanIcon.innerText = "📦";
-                barcodeInput.placeholder = "Arahkan scanner ke barcode...";
-            }
-            barcodeInput.focus();
-        }
-
-        // Jalur eksekusi tembakan scanner
-        barcodeInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                const inputValue = barcodeInput.value.trim().toUpperCase();
-                if (inputValue !== '') {
-                    
-                    if (currentMode === "rak") {
-                        // JALUR 1: Jika sedang dalam Mode Rak
-                        currentSublokasi = inputValue;
-                        currentRakBadge.innerText = currentSublokasi;
-                        currentRakBadge.className = "badge bg-success fs-6 fw-bold";
-                        statusMessage.innerHTML = `<span class='text-primary'>📍 RAK BERHASIL DISET KE: ${currentSublokasi}</span>`;
-                        
-                        emptyHistory.style.display = 'none';
-                        addRakToHistoryList(currentSublokasi);
-                        
-                        // Otomatis kembalikan ke mode barang setelah rak berhasil di-scan
-                        setMode("barang");
-                    } else {
-                        // JALUR 2: Jika sedang dalam Mode Barang
-                        sendDataToBackend(inputValue);
-                    }
-                }
-                barcodeInput.value = '';
+                inputQty.focus();
             }
         });
 
-        function sendDataToBackend(barcode) {
-            statusMessage.innerHTML = "<span class='text-muted'>Memproses...</span>";
+        // ACTION STEP 1: Selesai Scan Rak ➡️ Lompat ke Barcode
+        inputRak.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (inputRak.value.trim() !== '') {
+                    statusMessage.innerHTML = "<span class='text-muted small'>📍 Rak terkunci. Silakan scan barang...</span>";
+                    inputBarcode.focus();
+                }
+            }
+        });
+
+        // ACTION STEP 2: Selesai Scan Barcode ➡️ Lompat ke Qty
+        inputBarcode.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (inputBarcode.value.trim() !== '') {
+                    statusMessage.innerHTML = "<span class='text-muted small'>📦 Produk terbaca. Masukkan Qty fisik...</span>";
+                    inputQty.focus();
+                }
+            }
+        });
+
+        // ACTION STEP 3: Selesai Isi Qty & Tekan Enter ➡️ Kirim Data & Reset Loop ke Rak Kembali
+        inputQty.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const rak = inputRak.value.trim().toUpperCase();
+                const barcode = inputBarcode.value.trim().toUpperCase();
+                const qty = parseInt(inputQty.value);
+
+                if (!rak || !barcode || isNaN(qty) || qty <= 0) {
+                    statusMessage.innerHTML = "<span class='text-danger'>❌ Mohon lengkapi semua data form dengan benar!</span>";
+                    return;
+                }
+
+                sendDataToBackend(rak, barcode, qty);
+            }
+        });
+
+        // Fungsi AJAX mengirim bundle data lengkap ke API Flask
+        function sendDataToBackend(rak, barcode, qty) {
+            statusMessage.innerHTML = "<span class='text-muted'>Menyimpan ke server...</span>";
             
             fetch('/api/scan', {
                 method: 'POST',
@@ -151,19 +139,31 @@
                     barcode: barcode,
                     petugas: "{{ petugas }}",
                     zona: "{{ zona }}",
-                    sublokasi: currentSublokasi
+                    sublokasi: rak // Mengirim data lokasi yang di-scan barusan
                 })
             })
             .then(response => response.json().then(data => ({ status: response.status, body: data })))
             .then(res => {
                 if (res.status === 200) {
-                    statusMessage.innerHTML = `<span class='text-success'>✅ ${res.body.nama_produk} (Qty di rak ini: ${res.body.qty})</span>`;
+                    // Update Pesan Sukses
+                    statusMessage.innerHTML = `<span class='text-success'>✅ Berhasil! ${res.body.nama_produk} dimasukkan ke Rak ${rak}</span>`;
                     emptyHistory.style.display = 'none';
-                    addtoHistoryList(barcode, res.body.nama_produk, res.body.variant, res.body.qty, currentSublokasi);
+                    
+                    // Tambah ke riwayat list terbawah
+                    addtoHistoryList(barcode, res.body.nama_produk, res.body.variant, qty, rak);
+                    
                     counterTotalItem++;
                     totalScanUser.innerText = `Total: ${counterTotalItem} item`;
+
+                    // CLEAN UP FORM DAN RESET KURSOR BALIK KE NOMOR 1 (SCAN QR LOKASI)
+                    inputRak.value = '';
+                    inputBarcode.value = '';
+                    inputQty.value = '';
+                    inputRak.focus(); // Kursor kembali ke atas otomatis gess!
                 } else {
                     statusMessage.innerHTML = `<span class='text-danger'>❌ ${res.body.message}</span>`;
+                    inputBarcode.value = '';
+                    inputBarcode.focus(); // Jika barcode salah, balikkan fokus ke form barcode biar di-scan ulang
                 }
             })
             .catch(err => {
@@ -171,7 +171,7 @@
             });
         }
 
-        function addtoHistoryList(barcode, namaProduk, variant, currentQty, rak) {
+        function addtoHistoryList(barcode, namaProduk, variant, qty, rak) {
             const newItem = document.createElement('div');
             newItem.className = 'history-item d-flex justify-content-between align-items-center';
             const now = new Date();
@@ -180,22 +180,13 @@
             newItem.innerHTML = `
                 <div style="max-width: 80%;">
                     <div class="fw-bold text-dark small" style="line-height: 1.2;">${namaProduk}</div>
-                    <div class="text-muted" style="font-size: 11px;">Rak: <strong>${rak}</strong> | Barcode: ${barcode}</div>
+                    <div class="text-muted" style="font-size: 11px;">📍 Rak: <strong>${rak}</strong> | ${variant}</div>
                 </div>
                 <div class="text-end">
-                    <span class="badge bg-success fs-6">Qty: ${currentQty}</span>
+                    <span class="badge bg-success fs-6">Qty: ${qty}</span>
                     <div class="text-muted" style="font-size: 9px; margin-top: 2px;">🕒 ${timeString}</div>
                 </div>
             `;
-            historyList.insertBefore(newItem, historyList.firstChild);
-        }
-
-        function addRakToHistoryList(rakName) {
-            const newItem = document.createElement('div');
-            newItem.className = 'history-item rak-change text-center fw-bold text-primary small py-1';
-            const now = new Date();
-            const timeString = now.toTimeString().split(' ')[0];
-            newItem.innerHTML = `🚚 PINDAH RAK KE: ${rakName} <span class="text-muted fw-normal" style="font-size: 10px;">(${timeString})</span>`;
             historyList.insertBefore(newItem, historyList.firstChild);
         }
     </script>
