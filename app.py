@@ -11,6 +11,8 @@ scan_id_counter = 1
 scan_results = []
 # Penampung zona kustom cadangan jika admin menambahkan zona baru secara manual
 custom_zones = []
+# Penampung zona dari excel yang sengaja dihapus oleh admin
+deleted_excel_zones = []
 
 def load_master_data():
     """Membaca data Excel secara aman"""
@@ -26,7 +28,7 @@ def load_master_data():
     return pd.DataFrame()
 
 def get_active_zones():
-    """Mengambil list unik zona dari file excel ditambah zona kustom"""
+    """Mengambil list unik zona dari file excel ditambah zona kustom minus yang dihapus"""
     zones = set()
     df = load_master_data()
     if not df.empty:
@@ -39,9 +41,10 @@ def get_active_zones():
     # Masukkan data zona tambahan dari dashboard admin
     zones.update(custom_zones)
     
-    # Jika benar-benar kosong, berikan default agar tidak stuck kosong
-    if not zones:
-        return ["ZONA A", "ZONA B", "ZONA C", "ZONA D", "BULK"]
+    # Buang zona yang telah masuk daftar hapus (deleted_excel_zones)
+    for d_zone in deleted_excel_zones:
+        if d_zone in zones:
+            zones.remove(d_zone)
     
     return sorted(list(zones))
 
@@ -62,7 +65,7 @@ def scan_page():
 
 
 # =========================================================================
-# 🛡️ ROUTE SUPER USER & ADMIN DENGAN MANAGEMENT ZONA PANEL
+# 🛡️ ROUTE SUPER USER & ADMIN DENGAN MANAGEMENT ZONA PANEL + REMOVE OPTION
 # =========================================================================
 @app.route('/super-user')
 @app.route('/superuser')
@@ -82,6 +85,7 @@ def super_user_page():
         .card-stat { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .table-container { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .qty-input-edit { width: 80px; text-align: center; }
+        .btn-delete-zone { padding: 2px 6px; font-size: 11px; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -129,13 +133,13 @@ def super_user_page():
 
                 <div class="table-container">
                     <h5 class="fw-bold text-dark mb-2">📍 Tambah / Kelola Zona Kerja</h5>
-                    <p class="text-muted" style="font-size: 11px;">Gunakan form ini jika ingin menyuntikkan Zona Operasional baru secara instan gess:</p>
+                    <p class="text-muted" style="font-size: 11px;">Gunakan form ini untuk menambah atau menghapus Zona operasional gess:</p>
                     <div class="input-group mb-3">
                         <input type="text" id="newZoneName" class="form-control form-control-sm" placeholder="Contoh: ZONA COLDROOM" style="text-transform: uppercase;">
                         <button onclick="addNewZone()" class="btn btn-dark btn-sm fw-bold">➕ Tambah</button>
                     </div>
-                    <div class="fw-bold small text-secondary mb-1">Daftar Zona Aktif Saat Ini:</div>
-                    <ul class="list-group list-group-flush border rounded" id="zoneListContainer" style="max-height: 150px; overflow-y: auto; font-size: 13px;">
+                    <div class="fw-bold small text-secondary mb-1">Daftar Zona Kerja Aktif:</div>
+                    <ul class="list-group list-group-flush border rounded" id="zoneListContainer" style="max-height: 200px; overflow-y: auto; font-size: 13px;">
                         <li class="list-group-item text-muted text-center py-2">Loading data zona...</li>
                     </ul>
                 </div>
@@ -198,6 +202,7 @@ def super_user_page():
                         '</td>' +
                         '<td class="text-center">' +
                             '<input type="number" id="qty_input_' + item.id + '" class="form-control form-control-sm qty-input-edit d-inline-block" value="' + item.qty + '">' +
+                        }
                         '</td>' +
                         '<td class="text-center">' +
                             '<button onclick="saveQtyCorrection(' + item.id + ')" class="btn btn-sm btn-success py-1 px-2 fw-bold">Simpan</button>' +
@@ -217,7 +222,11 @@ def super_user_page():
                 const container = document.getElementById('zoneListContainer');
                 let html = '';
                 zones.forEach(z => {
-                    html += `<li class="list-group-item py-1 d-flex justify-content-between align-items-center">🔹 ${z}</li>`;
+                    // Penambahan tombol hapus di sebelah nama zona gess
+                    html += `<li class="list-group-item py-2 d-flex justify-content-between align-items-center">` +
+                            `<span>🔹 ${z}</span>` +
+                            `<button onclick="removeZone('${z}')" class="btn btn-danger btn-sm btn-delete-zone fw-bold">❌ Hapus</button>` +
+                            `</li>`;
                 });
                 container.innerHTML = html || `<li class="list-group-item text-muted text-center py-2">Tidak ada zona terdaftar</li>`;
             });
@@ -230,8 +239,18 @@ def super_user_page():
             fetch('/api/zones', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ zona: name })
+                body: JSON.stringify({ action: 'add', zona: name })
             }).then(res => res.json()).then(d => { el.value = ''; renderActiveZones(); });
+        }
+
+        function removeZone(zoneName) {
+            if(confirm(`Apakah Anda yakin ingin menghapus "${zoneName}" dari sistem gess?`)) {
+                fetch('/api/zones', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'remove', zona: zoneName })
+                }).then(res => res.json()).then(d => { renderActiveZones(); });
+            }
         }
 
         function saveQtyCorrection(rowId) {
@@ -266,12 +285,26 @@ def super_user_page():
 
 @app.route('/api/zones', methods=['GET', 'POST'])
 def handle_zones_api():
-    global custom_zones
+    global custom_zones, deleted_excel_zones
     if request.method == 'POST':
         data = request.json or {}
-        new_z = str(data.get('zona', '')).strip().upper()
-        if new_z and new_z not in custom_zones:
-            custom_zones.append(new_z)
+        action = data.get('action', 'add')
+        target_z = str(data.get('zona', '')).strip().upper()
+        
+        if target_z:
+            if action == 'add':
+                # Jika sebelumnya zona ini dihapus, batalkan status hapusnya
+                if target_z in deleted_excel_zones:
+                    deleted_excel_zones.remove(target_z)
+                if target_z not in custom_zones:
+                    custom_zones.append(target_z)
+            elif action == 'remove':
+                # Masukkan ke daftar hapus global dan bersihkan dari custom list
+                if target_z not in deleted_excel_zones:
+                    deleted_excel_zones.append(target_z)
+                if target_z in custom_zones:
+                    custom_zones.remove(target_z)
+                    
         return jsonify({'status': 'success'})
     return jsonify(get_active_zones())
 
