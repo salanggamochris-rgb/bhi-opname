@@ -202,7 +202,6 @@ def super_user_page():
                         '</td>' +
                         '<td class="text-center">' +
                             '<input type="number" id="qty_input_' + item.id + '" class="form-control form-control-sm qty-input-edit d-inline-block" value="' + item.qty + '">' +
-                        }
                         '</td>' +
                         '<td class="text-center">' +
                             '<button onclick="saveQtyCorrection(' + item.id + ')" class="btn btn-sm btn-success py-1 px-2 fw-bold">Simpan</button>' +
@@ -222,7 +221,6 @@ def super_user_page():
                 const container = document.getElementById('zoneListContainer');
                 let html = '';
                 zones.forEach(z => {
-                    // Penambahan tombol hapus di sebelah nama zona gess
                     html += `<li class="list-group-item py-2 d-flex justify-content-between align-items-center">` +
                             `<span>🔹 ${z}</span>` +
                             `<button onclick="removeZone('${z}')" class="btn btn-danger btn-sm btn-delete-zone fw-bold">❌ Hapus</button>` +
@@ -293,13 +291,11 @@ def handle_zones_api():
         
         if target_z:
             if action == 'add':
-                # Jika sebelumnya zona ini dihapus, batalkan status hapusnya
                 if target_z in deleted_excel_zones:
                     deleted_excel_zones.remove(target_z)
                 if target_z not in custom_zones:
                     custom_zones.append(target_z)
             elif action == 'remove':
-                # Masukkan ke daftar hapus global dan bersihkan dari custom list
                 if target_z not in deleted_excel_zones:
                     deleted_excel_zones.append(target_z)
                 if target_z in custom_zones:
