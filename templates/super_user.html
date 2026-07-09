@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super User Dashboard - Live Stock Opname</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .navbar-custom { background: #1e293b; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .card-stat { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); transition: transform 0.2s; }
+        .card-stat:hover { transform: translateY(-3px); }
+        .table-container { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .table th { background-color: #f8fafc; color: #64748b; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+        .qty-input-edit { width: 80px; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom py-3">
+        <div class="container">
+            <a class="navbar-brand fw-bold d-flex align-items-center" href="#">
+                🛡️ <span class="ms-2">BHI Opname - Super User Panel</span>
+            </a>
+            <div class="d-flex gap-2">
+                <a href="/api/download" class="btn btn-success fw-bold px-4">📥 Download Excel (.xlsx)</a>
+                <a href="/" class="btn btn-outline-light btn-sm">Halaman Login</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container my-4">
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card card-stat bg-white p-3 d-flex flex-row align-items-center justify-content-between">
+                    <div>
+                        <h6 class="text-muted small text-uppercase mb-1">Total Unik Barcode</h6>
+                        <h3 id="statTotalItems" class="fw-bold text-dark mb-0">0</h3>
+                    </div>
+                    <div class="fs-1 text-primary">📦</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card card-stat bg-white p-3 d-flex flex-row align-items-center justify-content-between">
+                    <div>
+                        <h6 class="text-muted small text-uppercase mb-1">Total Qty Fisik Ter-scan</h6>
+                        <h3 id="statTotalQty" class="fw-bold text-success mb-0">0</h3>
+                    </div>
+                    <div class="fs-1 text-success">🔢</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card card-stat bg-white p-3 d-flex flex-row align-items-center justify-content-between">
+                    <div>
+                        <h6 class="text-muted small text-uppercase mb-1">Status Sinkronisasi</h6>
+                        <h3 class="fw-bold text-warning mb-0 fs-5">⚡ LIVE AUTO-REFRESH</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="table-container mb-4">
+                    <h5 class="fw-bold text-dark mb-3">⚙️ Update Master Produk</h5>
+                    <p class="text-muted small">Jika ada barcode baru tidak terdaftar, upload ulang file master Excel terbarumu di bawah ini gess:</p>
+                    
+                    <form id="uploadMasterForm">
+                        <div class="mb-3">
+                            <input class="form-control form-control-sm" type="file" id="masterFile" accept=".xlsx" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm w-100 fw-bold">📤 Upload & Perbarui Master</button>
+                    </form>
+                    <div id="uploadStatus" class="mt-2 small fw-bold text-center"></div>
+                </div>
+            </div>
+
+            <div class="col-lg-8">
+                <div class="table-container">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold text-dark mb-0">📋 Data Hasil Scan Real-Time</h5>
+                        <button onclick="fetchLiveRecords()" class="btn btn-sm btn-outline-secondary">🔄 Refresh Manual</button>
+                    </div>
+
+                    <div class="table-responsive" style="max-height: 500px;">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>📍 Rak</th>
+                                    <th>👤 Petugas</th>
+                                    <th>📦 Informasi Produk</th>
+                                    <th class="text-center" style="width: 120px;">🔢 Qty Fisik</th>
+                                    <th class="text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="liveTableBody">
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-5">Menunggu kiriman data scan dari HP petugas...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Lakukan fetching otomatis dari API server setiap 3 detik gess!
+        setInterval(fetchLiveRecords, 3000);
+
+        function fetchLiveRecords() {
+            fetch('/api/products')
+            .then(res => res.json())
+            .then(data => {
+                const tbody = document.getElementById('liveTableBody');
+                
+                if (data.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-5">Belum ada aktivitas scan dari petugas gudang.</td></tr>`;
+                    document.getElementById('statTotalItems').innerText = '0';
+                    document.getElementById('statTotalQty').innerText = '0';
+                    return;
+                }
+
+                let htmlContent = '';
+                let grandTotalQty = 0;
+
+                // Loop tumpukan data dari memory RAM server
+                data.forEach(item => {
+                    grandTotalQty += item.qty;
+                    htmlContent += `
+                        <tr>
+                            <td><span class="badge bg-dark fw-bold px-2.5 py-1.5 fs-6">${item.sublokasi}</span><br><small class="text-muted">Zona: ${item.zona}</small></td>
+                            <td><strong class="text-secondary">${item.petugas}</strong></td>
+                            <td>
+                                <div class="fw-bold text-dark small mb-0">${item.product_name}</div>
+                                <div class="text-muted" style="font-size: 11px;">Barcode: <code>${item.barcode}</code> | SKU: ${item.sku} | Var: ${item.variant}</div>
+                            </td>
+                            <td class="text-center">
+                                <input type="number" id="qty_input_${item.id}" class="form-control form-control-sm qty-input-edit d-inline-block" value="${item.qty}" min="0">
+                            </td>
+                            <td class="text-center">
+                                <button onclick="saveQtyCorrection(${item.id})" class="btn btn-xs btn-success py-1 px-2 fw-bold" style="font-size: 11px;">Simpan</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                tbody.innerHTML = htmlContent;
+                document.getElementById('statTotalItems').innerText = data.length;
+                document.getElementById('statTotalQty').innerText = grandTotalQty;
+            })
+            .catch(err => console.log("Gagal sinkronisasi data live table:", err));
+        }
+
+        // Fungsi admin mengedit paksa kuantitas jika ada keteledoran entri dari petugas lapangan
+        function saveQtyCorrection(rowId) {
+            const inputField = document.getElementById(`qty_input_${rowId}`);
+            const newQtyValue = parseInt(inputField.value);
+
+            if (isNaN(newQtyValue) || newQtyValue < 0) {
+                alert("Jumlah kuantitas harus berupa angka valid minimal 0!");
+                return;
+            }
+
+            fetch('/api/update-qty', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: rowId, qty: newQtyValue })
+            })
+            .then(res => res.json())
+            .then(resData => {
+                if(resData.status === 'success') {
+                    alert("✅ Sukses! Kuantitas baris data berhasil disinkronkan.");
+                    fetchLiveRecords(); // Segarkan isi tabel
+                } else {
+                    alert("❌ Gagal: " + resData.message);
+                }
+            })
+            .catch(err => alert("Terjadi gangguan koneksi jaringan ke server!"));
+        }
+
+        // Event handler upload file master produk
+        document.getElementById('uploadMasterForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('masterFile');
+            const statusDiv = document.getElementById('uploadStatus');
+            
+            if (fileInput.files.length === 0) return;
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            statusDiv.innerHTML = "<span class='text-muted'>Sedang memproses file excel...</span>";
+
+            fetch('/api/upload-master', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    statusDiv.innerHTML = "<span class='text-success'>✅ Master Excel Berhasil Diperbarui!</span>";
+                    fileInput.value = '';
+                } else {
+                    statusDiv.innerHTML = `<span class='text-danger'>❌ ${data.message}</span>`;
+                }
+            })
+            .catch(err => {
+                statusDiv.innerHTML = "<span class='text-danger'>❌ Terjadi kesalahan jaringan server!</span>";
+            });
+        });
+
+        // Trigger load pertama kali halaman dibuka gess
+        fetchLiveRecords();
+    </script>
+</body>
+</html>
